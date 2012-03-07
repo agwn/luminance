@@ -43,7 +43,7 @@ int SDI = 7; //Red wire (not the red 5V wire!)
 int CKI = 8; //Green wire
 
 //#define STRIP_LENGTH 32 //32 LEDs on this strip
-#define STRIP_LENGTH 32
+#define STRIP_LENGTH 14
 //# LEDs on this strip
 long strip_colors[STRIP_LENGTH];
 

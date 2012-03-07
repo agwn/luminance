@@ -4,8 +4,10 @@
 #define DEBUG_ACCEL  0
 #define DEBUG_TAP    0
 #define DEBUG_LEDS   0
+#define DEBUG_TURN   1
+#define SERIAL_TEST  1
 
-#define DELAY_TIME  25
+#define DELAY_TIME  250
 #define RESET_DELAY 250
 #define RAINBOW_ON_DUR 2000
 #define SHAKE_ON_DUR  1000
@@ -62,6 +64,20 @@ double xg, yg, zg;
 char tapType=0;
 
 typedef enum {
+  noTurn=0x00,
+  rightTurn,
+  leftTurn,
+  slowStop,
+  speedUp,
+  slowDown,
+  maxTurnState,
+}
+turnState_t;
+
+turnState_t turnState = noTurn;
+turnState_t lastTurnState = noTurn;
+
+typedef enum {
   rainbowColorMode=0x00,
   rainbowColorMoveMode,
   colorRollMode,
@@ -77,18 +93,18 @@ colorMode_t colorMode = rainbowColorMode;
 const int SDI = 8; //LED strip data
 const int CKI = 7; //LED strip clock
 
+//#define STRIP_LENGTH 32 //32 LEDs on this strip
+#define STRIP_LENGTH 32   //#LEDs on this strip
+#define HALF_STRIP_LEN 16  //(STRIP_LENGTH/2)
 
-#define REFLECT_COLOR 0
-
-#define STRIP_LENGTH 32 // 32 LEDs on this strip
-//#define STRIP_LENGTH 64   // # LEDs on this strip
+#define LOOP_STRIP 0
+#define SHUFFLE_FULL_STRIP 0
 
 #if (STRIP_LENGTH >1)
 #define ONE_COLOR_STRIP 0  // change here to enable/disable
 #else
 #define ONE_COLOR_STRIP 0
 #endif
-
 
 long strip_colors[STRIP_LENGTH];
 
@@ -120,6 +136,16 @@ int rValue = LED_DEF_VAL;
 int gValue = LED_DEF_VAL;
 int bValue = LED_DEF_VAL;
 
+#if SERIAL_TEST
+//
+// incoming serial byte
+//
+// temp var for storing incoming serial data
+// acsii chars are really nice to 
+// avoid colliding with the lower level transport protocols
+//
+int inByte = 0;
+#endif
 
 void setup(){ 
   pinMode(SDI, OUTPUT);
@@ -201,33 +227,41 @@ void loop(){
 
 #if DEBUG_TAP
       Serial.println("SINGLE");
-      Serial.print(x);
-      Serial.print(',');
-      Serial.print(y);
-      Serial.print(',');
-      Serial.println(z);
 #endif
     }
     else{
       // increment color mode
-      colorMode = (colorMode_t)(((int)colorMode+1)%maxColorMode);
+      //colorMode = (colorMode_t)(((int)colorMode+1)%maxColorMode);
+      turnState = (turnState_t)(((int)turnState+1)%maxTurnState);
       Serial.println(colorMode);
 
 #if DEBUG_TAP
       Serial.println("DOUBLE");
-      Serial.print((float)xg,2);
-      Serial.print("g,");
-      Serial.print((float)yg,2);
-      Serial.print("g,");
-      Serial.print((float)zg,2);
-      Serial.println("g");
 #endif
     }
+#if DEBUG_TAP
+    Serial.print((float)xg,2);
+    Serial.print("g,");
+    Serial.print((float)yg,2);
+    Serial.print("g,");
+    Serial.print((float)zg,2);
+    Serial.println("g");
+#endif
+
     detachInterrupt(0);
     delay(RESET_DELAY);
     attachInterrupt(0, tap, RISING);
     tapType=0;
   }
+
+#if SERIAL_TEST  // if we get a valid byte, read analog ins:
+  if (Serial.available() > 0) {
+    reactToSerialInput();
+  }
+#endif
+
+  // detect and set turn signals
+  // if accel y < threshold and x < in turn signal mode
 
   updateColor();
   post_frame(); //Push the current color frame to the strip
@@ -242,7 +276,234 @@ void loop(){
   Serial.println(z, DEC);
 #endif
 
-  delay(DELAY_TIME); 
+  delay(DELAY_TIME);
+}
+
+#if SERIAL_TEST
+void reactToSerialInput() {
+  // get incoming byte:
+  inByte = Serial.read();
+
+  // save out current state
+  lastTurnState = turnState;
+
+  // i don't love this, but meh.
+  switch (inByte) {
+
+  case '0':
+  case 'n':
+  case 'N':
+    turnState = noTurn;
+    break;
+
+  case 'r':
+  case 'R':
+    turnState = rightTurn;
+    break;
+
+  case 'l':
+  case 'L':
+    turnState = leftTurn;
+    break;
+
+  case 's':
+  case 'S':
+    turnState = slowStop;
+    break;
+
+  case 'u':
+  case 'U':
+  case '+':
+    turnState = speedUp;
+    break;
+
+  case 'd':
+  case 'D':
+  case '-':
+    turnState = slowDown;
+    break;
+
+  case '*': // defaults
+    turnState = noTurn;
+    break;
+
+  default:
+    if ('\n' != inByte) {
+      Serial.print("unknown command:");
+      Serial.println(byte(inByte));
+    }
+    turnState = noTurn;
+    break;
+  }
+}
+#endif
+
+static inline void rainbowColor() {
+  float t = (float) (millis()-startTime) * oSpeed;
+
+  bValue = (int)constrain((LED_MAX_VAL*(sin(t)/2+rOffset)), LED_MIN_VAL, LED_MAX_VAL);
+  gValue = (int)constrain((LED_MAX_VAL*(sin(t+TWO_PI/3)/2+gOffset)), LED_MIN_VAL, LED_MAX_VAL);
+  rValue = (int)constrain((LED_MAX_VAL*(sin(t+2*TWO_PI/3)/2+bOffset)), LED_MIN_VAL, LED_MAX_VAL);
+}
+
+void updateColor() {
+  int i;
+
+  //Now form a new RGB color
+  long new_down_color = 0;
+  long new_up_color = 0;
+  long start_color = 0;
+
+#if 0
+  rainbowColor();
+  colorMode = rainbowColorMode;
+
+  new_up_color |= rValue;
+  new_up_color <<= 8; 
+  new_up_color |= gValue;
+  new_up_color <<= 8; 
+  new_up_color |= bValue;
+#endif
+
+#if 1
+  // reset strip when changing states
+  if ((turnState != lastTurnState) && (noTurn != turnState)) {
+    // init state
+    for(i = 0; i<STRIP_LENGTH; i++) {
+      strip_colors[i] = 0;
+    }
+  } 
+
+  start_color = strip_colors[HALF_STRIP_LEN-1] | strip_colors[HALF_STRIP_LEN];
+
+  switch (turnState) {
+  case noTurn:
+    // update state
+#if LOOP_STRIP
+    new_up_color = strip_colors[0];
+#else
+    new_down_color = 0;
+    new_up_color = 0;
+#endif
+    break;
+
+  case rightTurn:
+    // shift blue leds up the strip
+    if (start_color) {
+      new_up_color = 0;
+    }
+    else {
+      new_up_color = 0xFF;
+    }
+    new_down_color = 0;
+    break;
+
+  case leftTurn:
+    // shift blue leds down the strip
+    new_up_color = 0;
+    if (start_color) {
+      new_down_color = 0;
+    }
+    else {
+      new_down_color = 0xFF;
+    }
+    break;
+
+  case slowStop:
+    // flash red leds
+    if (turnState != lastTurnState) {
+      // init state
+      for(i = 0; i<HALF_STRIP_LEN; i+=2) {
+        strip_colors[i] = 0xFF0000;
+        strip_colors[(STRIP_LENGTH-1)-i] = 0xFF0000;
+      }
+    } 
+    else {
+      // update state
+      if (start_color) {
+        new_up_color = 0;
+      }
+      else {
+        new_up_color = 0xFF0000;
+      }
+      new_down_color = new_up_color;
+    }
+    break;
+
+  case speedUp:
+    // move blue leds outwards
+    if (start_color) {
+      new_up_color = 0;
+    }
+    else {
+      new_up_color = 0xFF;
+    }
+    new_down_color = new_up_color;
+    break;
+
+  case slowDown:
+    // move blue leds outwards
+    if (start_color) {
+      new_up_color = 0;
+    }
+    else {
+      new_up_color = 0xFF;
+    }
+    new_down_color = new_up_color;
+    break;
+
+  default:
+    // WTF?
+    break;
+  }
+
+  lastTurnState=turnState;
+
+#if DEBUG_TURN
+  Serial.print("state: ");
+  Serial.println(turnState);
+  Serial.print("start: ");
+  Serial.print(start_color, HEX);
+  Serial.print(" up: ");
+  Serial.print(new_up_color, HEX);
+  Serial.print(" down: ");
+  Serial.println(new_down_color, HEX);
+#endif
+
+#endif
+
+  //#if LOOP_STRIP
+  //  new_up_color = strip_colors[0];
+  //#endif
+
+#if SHUFFLE_FULL_STRIP
+  //First, shuffle all the current colors down one spot on the strip
+  for(i = 0; i<(STRIP_LENGTH-1); i++) {
+    strip_colors[i] = strip_colors[i+1];
+  }
+  // add the new color
+  strip_colors[STRIP_LENGTH-1] = new_up_color; //Add the new random color to the strip
+#else
+  //First, shuffle the current colors down one spot on the strip
+  if (speedUp == turnState) { // need to shift in not out
+    for(i = 0; i<(HALF_STRIP_LEN-2); i++) {
+      strip_colors[HALF_STRIP_LEN-i-1] = strip_colors[HALF_STRIP_LEN-i-2];
+      strip_colors[HALF_STRIP_LEN+i] = strip_colors[HALF_STRIP_LEN+i+1];
+    }
+    // add the new color
+    strip_colors[0] = new_up_color; //Add the new random color to the strip
+    strip_colors[STRIP_LENGTH-1] = new_down_color; //Add the new random color to the strip
+  } 
+  else {
+    for(i = 0; i<(HALF_STRIP_LEN-1); i++) {
+      strip_colors[i] = strip_colors[i+1];
+      strip_colors[(STRIP_LENGTH-1)-i] = strip_colors[(STRIP_LENGTH-2)-i];
+    }
+    // add the new color
+    strip_colors[HALF_STRIP_LEN-1] = new_down_color; //Add the new color to the strip
+    strip_colors[HALF_STRIP_LEN] = new_up_color; //Add the new color to the strip
+  }
+#endif
 }
 
 //This function will write a value to a register on the ADXL345.
@@ -294,199 +555,6 @@ void tap(void){
   }
 }
 
-
-static inline void rainbowColor() {
-  float t = (float) (millis()-startTime) * oSpeed;
-
-  bValue = (int)constrain((LED_MAX_VAL*(sin(t)/2+rOffset)), LED_MIN_VAL, LED_MAX_VAL);
-  gValue = (int)constrain((LED_MAX_VAL*(sin(t+TWO_PI/3)/2+gOffset)), LED_MIN_VAL, LED_MAX_VAL);
-  rValue = (int)constrain((LED_MAX_VAL*(sin(t+2*TWO_PI/3)/2+bOffset)), LED_MIN_VAL, LED_MAX_VAL);
-}
-
-static inline void rainbowColorMove() {
-  static bool rainbowActive=false;
-
-  if ((abs(x)+abs(y)+abs(z)) > (G_THRESH*ACCEL_MAX_VAL)) {
-    rainbowActive = true;
-    startTime = millis();
-  } 
-  else {
-    if (rainbowActive && ((millis() - startTime) > RAINBOW_ON_DUR)) {
-      rainbowActive = false;
-    }
-  }
-  if (rainbowActive == true) {
-    float t = (float) millis() * oSpeed;
-    bValue = (int)constrain((LED_MAX_VAL*(sin(t)/2+rOffset)), LED_MIN_VAL, LED_MAX_VAL);
-    gValue = (int)constrain((LED_MAX_VAL*(sin(t+TWO_PI/3)/2+gOffset)), LED_MIN_VAL, LED_MAX_VAL);
-    rValue = (int)constrain((LED_MAX_VAL*(sin(t+2*TWO_PI/3)/2+bOffset)), LED_MIN_VAL, LED_MAX_VAL);
-  }
-  else {
-    bValue = gValue = rValue = LED_DEF_LOW_VAL;
-  }
-}
-
-static inline void colorRoll() {
-  float g = sqrt(x*x+y*y+z*z);
-  float t = THETA_SCALE*acos(z/g)+THETA_0;
-  float delta=PI/20;
-  long new_color = 0;
-
-  //Pre-fill the color array with known values
-  for(int i = 0 ; i < STRIP_LENGTH ; i++) {
-    new_color = 0;
-    
-    bValue = (int)constrain((LED_MAX_VAL*(sin(t+i*delta)/2+rOffset))-COLOR_OFFSET, LED_MIN_VAL, LED_MAX_VAL);
-    gValue = (int)constrain((LED_MAX_VAL*(sin(t+i*delta+TWO_PI/3)/2+gOffset))-COLOR_OFFSET, LED_MIN_VAL, LED_MAX_VAL);
-    rValue = (int)constrain((LED_MAX_VAL*(sin(t+i*delta+2*TWO_PI/3)/2+bOffset))-COLOR_OFFSET, LED_MIN_VAL, LED_MAX_VAL);
-
-    new_color |= rValue;
-    new_color <<= 8; 
-    new_color |= gValue;
-    new_color <<= 8; 
-    new_color |= bValue;
-    
-    strip_colors[i] = new_color;
-  }
-}
-
-static inline void thresholdColor() {
-  static bool shakeActive=false;
-
-  if (shakeActive) {
-    if ((millis() - startTime) > SHAKE_ON_DUR) {
-      shakeActive = false;
-      rValue = gValue = bValue = 0x00;
-    }
-  } 
-  else {
-    rValue = gValue = bValue = 0x00;
-  }    
-
-  if (abs(x) > (ACCEL_THRESH*ACCEL_MAX_VAL)) {
-    rValue = (int)constrain(abs(x), LED_MIN_VAL, LED_MAX_VAL);
-    shakeActive = true;
-    startTime = millis();
-  } 
-  if (abs(y) > (ACCEL_THRESH*ACCEL_MAX_VAL)) {
-    bValue = (int)constrain(abs(z), LED_MIN_VAL, LED_MAX_VAL);
-    shakeActive = true;
-    startTime = millis();
-  } 
-  if (abs(z) > (ACCEL_THRESH*ACCEL_MAX_VAL)) {
-    gValue = (int)constrain(abs(y), LED_MIN_VAL, LED_MAX_VAL);
-    shakeActive = true;
-    startTime = millis();
-  } 
-}
-
-static inline void rectifyColor() {
-  rValue = (int)constrain(abs(x)-COLOR_OFFSET, LED_MIN_VAL, LED_MAX_VAL);
-  gValue = (int)constrain(abs(y)-COLOR_OFFSET, LED_MIN_VAL, LED_MAX_VAL);
-  bValue = (int)constrain(abs(z)-COLOR_OFFSET, LED_MIN_VAL, LED_MAX_VAL);
-}
-
-//static inline void colorGravity() {
-//  rValue = (int)constrain(x+abs(ACCEL_MIN_VAL), LED_MIN_VAL, LED_MAX_VAL);
-//  gValue = (int)constrain(y+abs(ACCEL_MIN_VAL), LED_MIN_VAL, LED_MAX_VAL);
-//  bValue = (int)constrain(z+abs(ACCEL_MIN_VAL), LED_MIN_VAL, LED_MAX_VAL);
-//}
-
-
-void updateColor() {
-  int i;
-
-  switch(colorMode) {
-  case rainbowColorMode:
-    rainbowColor();
-    break;
-
-  case rainbowColorMoveMode:
-    rainbowColorMove();
-    break;
-
-  case colorRollMode:
-    colorRoll();
-    break;
-
-  case thresholdColorMode:
-    thresholdColor();
-    break;
-
-  case rectifyColorMode:
-    rectifyColor();
-    break;
-
-    //case colorGravityMode:
-    //  colorGravity();
-    //  break;
-
-  default:
-    rainbowColor();
-    colorMode = rainbowColorMode;
-    break;
-  }  
-
-  //Now form a new RGB color
-  long new_color = 0;
-
-  new_color |= rValue;
-  new_color <<= 8; 
-  new_color |= gValue;
-  new_color <<= 8; 
-  new_color |= bValue;
-
-#if ONE_COLOR_STRIP
-  for(i = 0; i < STRIP_LENGTH; i++) {
-    strip_colors[i] = new_color;
-  }
-#else
-#if REFLECT_COLOR
-  //First, shuffle all even colors back two, then the last odd color to even then all odd colors back two
-  for(i = 1; i < STRIP_LENGTH - 2; i+=2) {
-    strip_colors[i] = strip_colors[i + 2];
-  }
-  // add the new color
-  strip_colors[0] = new_color; //Add the new random color to the strip
-  for (i = (STRIP_LENGTH - 2); i > 1; i-=2) {
-    strip_colors[i] = strip_colors[i - 2];
-  }
-  strip_colors[STRIP_LENGTH-1] = strip_colors[STRIP_LENGTH-2];
-#else
-
-  switch(colorMode) {
-
-    //case rainbowColorMode:
-    //case rainbowColorMoveMode:
-    //case thresholdColorMode:
-    //case rectifyColorMode:
-  case colorRollMode:
-    // full sequence already done in rainbow
-    break;
-
-  default:
-    //First, shuffle all the current colors down one spot on the strip
-    for(i = (STRIP_LENGTH - 1) ; i > 0 ; i--) {
-      strip_colors[i] = strip_colors[i - 1];
-    }
-    // add the new color
-    strip_colors[0] = new_color; //Add the new random color to the strip
-    break;
-  }  
-#endif
-#endif
-
-#if DEBUG_LEDS
-  Serial.print(" LEDs: ");
-  Serial.print(rValue);
-  Serial.print(", ");
-  Serial.print(gValue);
-  Serial.print(", ");
-  Serial.println(bValue);
-#endif
-}
-
-
 //Takes the current strip color array and pushes it out
 void post_frame (void) {
   //Each LED requires 24 bits of data
@@ -519,6 +587,29 @@ void post_frame (void) {
   digitalWrite(CKI, LOW);
   delayMicroseconds(500); //Wait for 500us to go into reset
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
