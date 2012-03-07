@@ -7,7 +7,7 @@
 #define DEBUG_TURN   0
 #define SERIAL_TEST  1
 
-#define DELAY_TIME  250
+#define DELAY_TIME  100
 #define RESET_DELAY 250
 #define RAINBOW_ON_DUR 2000
 #define SHAKE_ON_DUR  1000
@@ -199,9 +199,6 @@ void setup(){
 }
 
 void loop(){
-  Serial.print("start state: ");
-  Serial.println(turnState);
-
   //Reading 6 bytes of data starting at register DATAX0 will retrieve the x,y and z acceleration values from the ADXL345.
   //The results of the read operation will get stored to the values[] buffer.
   readRegister(DATAX0, 6, values);
@@ -281,8 +278,6 @@ void loop(){
 #endif
 
   delay(DELAY_TIME);
-  Serial.print("end state: ");
-  Serial.println(turnState);
 }
 
 #if SERIAL_TEST
