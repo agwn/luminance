@@ -4,7 +4,7 @@
 #define DEBUG_ACCEL  0
 #define DEBUG_TAP    0
 #define DEBUG_LEDS   0
-#define DEBUG_TURN   1
+#define DEBUG_TURN   0
 #define SERIAL_TEST  1
 
 #define DELAY_TIME  250
@@ -21,7 +21,7 @@
 #define THETA_0 (PI/2)
 
 //Assign the Chip Select signal to pin 10.
-int CS=10;
+const int CS=10;
 
 //ADXL345 Register Addresses
 #define	DEVID		0x00	//Device ID Register
@@ -88,7 +88,7 @@ typedef enum {
 } 
 colorMode_t;
 
-colorMode_t colorMode = rainbowColorMode;  
+static colorMode_t colorMode = rainbowColorMode;  
 
 const int SDI = 8; //LED strip data
 const int CKI = 7; //LED strip clock
@@ -199,6 +199,9 @@ void setup(){
 }
 
 void loop(){
+  Serial.print("start state: ");
+  Serial.println(turnState);
+
   //Reading 6 bytes of data starting at register DATAX0 will retrieve the x,y and z acceleration values from the ADXL345.
   //The results of the read operation will get stored to the values[] buffer.
   readRegister(DATAX0, 6, values);
@@ -264,6 +267,7 @@ void loop(){
   // if accel y < threshold and x < in turn signal mode
 
   updateColor();
+
   post_frame(); //Push the current color frame to the strip
 
 #if DEBUG_ACCEL
@@ -277,6 +281,8 @@ void loop(){
 #endif
 
   delay(DELAY_TIME);
+  Serial.print("end state: ");
+  Serial.println(turnState);
 }
 
 #if SERIAL_TEST
@@ -331,8 +337,8 @@ void reactToSerialInput() {
     if ('\n' != inByte) {
       Serial.print("unknown command:");
       Serial.println(byte(inByte));
+      turnState = noTurn;
     }
-    turnState = noTurn;
     break;
   }
 }
@@ -443,6 +449,8 @@ void updateColor() {
 
   case slowDown:
     // move blue leds outwards
+    start_color = strip_colors[0] | strip_colors[STRIP_LENGTH-1];
+
     if (start_color) {
       new_up_color = 0;
     }
@@ -457,8 +465,6 @@ void updateColor() {
     break;
   }
 
-  lastTurnState=turnState;
-
 #if DEBUG_TURN
   Serial.print("state: ");
   Serial.println(turnState);
@@ -469,6 +475,8 @@ void updateColor() {
   Serial.print(" down: ");
   Serial.println(new_down_color, HEX);
 #endif
+
+  lastTurnState = turnState;
 
 #endif
 
@@ -486,8 +494,11 @@ void updateColor() {
 #else
   //First, shuffle the current colors down one spot on the strip
   if (speedUp == turnState) { // need to shift in not out
-    for(i = 0; i<(HALF_STRIP_LEN-2); i++) {
-      strip_colors[HALF_STRIP_LEN-i-1] = strip_colors[HALF_STRIP_LEN-i-2];
+    for(i = (HALF_STRIP_LEN-1); i>0; i--) {
+      strip_colors[i] = strip_colors[i-1];
+      //strip_colors[HALF_STRIP_LEN-i] = strip_colors[HALF_STRIP_LEN-i+1];
+    }
+    for(i = 0; i<(HALF_STRIP_LEN-1); i++) {
       strip_colors[HALF_STRIP_LEN+i] = strip_colors[HALF_STRIP_LEN+i+1];
     }
     // add the new color
@@ -587,40 +598,4 @@ void post_frame (void) {
   digitalWrite(CKI, LOW);
   delayMicroseconds(500); //Wait for 500us to go into reset
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
