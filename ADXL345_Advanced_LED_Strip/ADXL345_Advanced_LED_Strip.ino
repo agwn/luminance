@@ -5,7 +5,16 @@
 #define DEBUG_TAP    0
 #define DEBUG_LEDS   0
 
-#define DELAY_TIME  25
+//#define STRIP_LENGTH 32 // 32 LEDs on this strip
+//#define STRIP_LENGTH 64   // # LEDs on this strip
+#define STRIP_LENGTH 1   // # LEDs on this strip
+
+//const int SDI = 8; //LED strip data
+//const int CKI = 7; //LED strip clock
+const int SDI = 7; //LED strip data
+const int CKI = 8; //LED strip clock
+
+#define DELAY_TIME  25  
 #define RESET_DELAY 250
 #define RAINBOW_ON_DUR 2000
 #define SHAKE_ON_DUR  1000
@@ -65,30 +74,25 @@ typedef enum {
   rainbowColorMode=0x00,
   rainbowColorMoveMode,
   colorRollMode,
+  colorRollPulseMode,
   thresholdColorMode,  // hit and miss
   rectifyColorMode,
   //colorGravityMode,    // looks like crap
-  maxColorMode,
+  colorMaxAccelMode,
+  //maxColorMode,
 } 
 colorMode_t;
 
 colorMode_t colorMode = rainbowColorMode;  
 
-const int SDI = 8; //LED strip data
-const int CKI = 7; //LED strip clock
-
 
 #define REFLECT_COLOR 0
-
-#define STRIP_LENGTH 32 // 32 LEDs on this strip
-//#define STRIP_LENGTH 64   // # LEDs on this strip
 
 #if (STRIP_LENGTH >1)
 #define ONE_COLOR_STRIP 0  // change here to enable/disable
 #else
 #define ONE_COLOR_STRIP 0
 #endif
-
 
 long strip_colors[STRIP_LENGTH];
 
@@ -228,21 +232,22 @@ void loop(){
     attachInterrupt(0, tap, RISING);
     tapType=0;
   }
-
-  updateColor();
-  post_frame(); //Push the current color frame to the strip
-
+  else
+  {
+    updateColor();
+    post_frame(); //Push the current color frame to the strip
 #if DEBUG_ACCEL
-  //Print the results to the terminal.
-  Serial.print("accel: ");
-  Serial.print(x, DEC);
-  Serial.print(',');
-  Serial.print(y, DEC);
-  Serial.print(',');
-  Serial.println(z, DEC);
+    //Print the results to the terminal.
+    Serial.print("accel: ");
+    Serial.print(x, DEC);
+    Serial.print(',');
+    Serial.print(y, DEC);
+    Serial.print(',');
+    Serial.println(z, DEC);
 #endif
 
-  delay(DELAY_TIME); 
+    delay(DELAY_TIME); 
+  }
 }
 
 //This function will write a value to a register on the ADXL345.
@@ -327,15 +332,20 @@ static inline void rainbowColorMove() {
 }
 
 static inline void colorRoll() {
-  float g = sqrt(x*x+y*y+z*z);
-  float t = THETA_SCALE*acos(z/g)+THETA_0;
+  //test
+  float g = 128;
+  //float t = (float) (millis()-startTime) * oSpeed;
+  //end test
+
+  //float g = sqrt(x*x+y*y+z*z);
+  float t = THETA_SCALE*acos(x/g)+THETA_0;
   float delta=PI/20;
   long new_color = 0;
 
   //Pre-fill the color array with known values
   for(int i = 0 ; i < STRIP_LENGTH ; i++) {
     new_color = 0;
-    
+
     bValue = (int)constrain((LED_MAX_VAL*(sin(t+i*delta)/2+rOffset))-COLOR_OFFSET, LED_MIN_VAL, LED_MAX_VAL);
     gValue = (int)constrain((LED_MAX_VAL*(sin(t+i*delta+TWO_PI/3)/2+gOffset))-COLOR_OFFSET, LED_MIN_VAL, LED_MAX_VAL);
     rValue = (int)constrain((LED_MAX_VAL*(sin(t+i*delta+2*TWO_PI/3)/2+bOffset))-COLOR_OFFSET, LED_MIN_VAL, LED_MAX_VAL);
@@ -345,9 +355,18 @@ static inline void colorRoll() {
     new_color |= gValue;
     new_color <<= 8; 
     new_color |= bValue;
-    
+
     strip_colors[i] = new_color;
   }
+}
+
+static inline void colorRollPulse() {
+  float g = sqrt(x*x+y*y+z*z);
+  float t = THETA_SCALE*acos(z/g)+THETA_0;
+
+  bValue = (int)constrain((LED_MAX_VAL*(sin(t)/2+rOffset)), LED_MIN_VAL, LED_MAX_VAL);
+  gValue = (int)constrain((LED_MAX_VAL*(sin(t+TWO_PI/3)/2+gOffset)), LED_MIN_VAL, LED_MAX_VAL);
+  rValue = (int)constrain((LED_MAX_VAL*(sin(t+2*TWO_PI/3)/2+bOffset)), LED_MIN_VAL, LED_MAX_VAL);
 }
 
 static inline void thresholdColor() {
@@ -407,6 +426,10 @@ void updateColor() {
 
   case colorRollMode:
     colorRoll();
+    break;
+
+  case colorRollPulseMode:
+    colorRollPulse();
     break;
 
   case thresholdColorMode:
@@ -519,6 +542,11 @@ void post_frame (void) {
   digitalWrite(CKI, LOW);
   delayMicroseconds(500); //Wait for 500us to go into reset
 }
+
+
+
+
+
 
 
 

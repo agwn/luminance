@@ -43,7 +43,7 @@ int pwmDutyCycle[pwmPinCnt] = {
 
 // modulating background color
 //float oSpeed = .000075;
-float oSpeed = 0.00075;
+float oSpeed = 0.00025;
 
 const float rOffset = PWM_DEF_VAL/(float)PWM_MAX_VAL;
 const float gOffset = PWM_DEF_VAL/(float)PWM_MAX_VAL;

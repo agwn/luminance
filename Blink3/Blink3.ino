@@ -4,9 +4,9 @@
  
   This example code is in the public domain.
  */
-#define BLUE_OUT   3
-#define GREEN_OUT  5
-#define RED_OUT    6
+#define RED_OUT    3
+#define BLUE_OUT   5
+#define GREEN_OUT  6
 
 #define LED_ON_TIME  1000
 #define LED_OFF_TIME  500

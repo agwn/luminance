@@ -5,20 +5,23 @@
 #define DEBUG_TAP    0
 #define DEBUG_LEDS   0
 #define DEBUG_TURN   0
-#define SERIAL_TEST  1
+#define SERIAL_TEST  0
 
-#define DELAY_TIME  100
-#define RESET_DELAY 250
-#define RAINBOW_ON_DUR 2000
-#define SHAKE_ON_DUR  1000
-#define STROBE_ON_DUR 250
+#define DELAY_TIME       50
+#define RESET_DELAY      250
+#define RAINBOW_ON_DUR  2000
+#define SHAKE_ON_DUR    1000
+#define STROBE_ON_DUR    250
 
-#define G_THRESH  1.9
-#define ACCEL_THRESH 1.5
+#define THRESH_UP     0.70
+#define THRESH_FLAT   0.30
 
-#define COLOR_OFFSET 10
-#define THETA_SCALE 2
-#define THETA_0 (PI/2)
+#define G_THRESH      1.9
+#define ACCEL_THRESH  1.5
+
+#define COLOR_OFFSET   10
+#define THETA_SCALE     2
+#define THETA_0     (PI/2)
 
 //Assign the Chip Select signal to pin 10.
 const int CS=10;
@@ -94,8 +97,8 @@ const int SDI = 8; //LED strip data
 const int CKI = 7; //LED strip clock
 
 //#define STRIP_LENGTH 32 //32 LEDs on this strip
-#define STRIP_LENGTH 32   //#LEDs on this strip
-#define HALF_STRIP_LEN 16  //(STRIP_LENGTH/2)
+#define STRIP_LENGTH 64   //#LEDs on this strip
+#define HALF_STRIP_LEN 32  //(STRIP_LENGTH/2)
 
 #define LOOP_STRIP 0
 #define SHUFFLE_FULL_STRIP 0
@@ -232,8 +235,8 @@ void loop(){
     else{
       // increment color mode
       //colorMode = (colorMode_t)(((int)colorMode+1)%maxColorMode);
-      turnState = (turnState_t)(((int)turnState+1)%maxTurnState);
-      Serial.println(colorMode);
+      //turnState = (turnState_t)(((int)turnState+1)%maxTurnState);
+      //Serial.println(colorMode);
 
 #if DEBUG_TAP
       Serial.println("DOUBLE");
@@ -262,7 +265,24 @@ void loop(){
 
   // detect and set turn signals
   // if accel y < threshold and x < in turn signal mode
-
+  // -x left turn
+  // +z stop
+  // -z right
+  
+  if ((xg < -1*THRESH_UP) && (abs(yg) < THRESH_FLAT) && (abs(zg) < THRESH_FLAT)) {
+    // left turn
+    turnState = leftTurn;
+  } else if ((abs(xg) < THRESH_FLAT) && (abs(yg) < THRESH_FLAT) && (zg > THRESH_FLAT)) {
+    // right turn
+    turnState = rightTurn;
+  } else if ((abs(xg) < THRESH_FLAT) && (abs(yg) < THRESH_FLAT) && (zg < -1*THRESH_FLAT)) {
+    // stop
+    turnState = slowStop;
+  } else {
+    turnState = noTurn;
+  }
+  
+  
   updateColor();
 
   post_frame(); //Push the current color frame to the strip
