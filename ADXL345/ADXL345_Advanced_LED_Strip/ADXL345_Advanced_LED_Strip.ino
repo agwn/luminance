@@ -5,9 +5,9 @@
 #define DEBUG_TAP    0
 #define DEBUG_LEDS   0
 
-//#define STRIP_LENGTH 32 // 32 LEDs on this strip
+#define STRIP_LENGTH 32 // 32 LEDs on this strip
 //#define STRIP_LENGTH 64   // # LEDs on this strip
-#define STRIP_LENGTH 1   // # LEDs on this strip
+//#define STRIP_LENGTH 1   // # LEDs on this strip
 
 //const int SDI = 8; //LED strip data
 //const int CKI = 7; //LED strip clock
@@ -79,7 +79,7 @@ typedef enum {
   rectifyColorMode,
   //colorGravityMode,    // looks like crap
   colorMaxAccelMode,
-  //maxColorMode,
+  maxColorMode,
 } 
 colorMode_t;
 
