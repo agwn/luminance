@@ -2,11 +2,10 @@
 #include <SPI.h>
 
 #define DEBUG_ACCEL  0
-#define DEBUG_LEDS   0
+#define DEBUG_LEDS   1
 
-#define STRIP_LENGTH 32 // 32 LEDs on this strip
-//#define STRIP_LENGTH 64   // # LEDs on this strip
-//#define STRIP_LENGTH 1   // # LEDs on this strip
+//#define STRIP_LENGTH 32 // 32 LEDs on this strip
+#define STRIP_LENGTH 20   // # LEDs on this strip
 
 const int SDI = 8;
 const int CKI = 7;
@@ -47,6 +46,7 @@ typedef enum {
   rainbowColorMode=0x00,
   rainbowColorMoveMode,
   colorRollMode,
+  colorRollWaveMode,
   colorRollPulseMode,
   thresholdColorMode,  // hit and miss
   rectifyColorMode,
@@ -56,10 +56,10 @@ typedef enum {
 } 
 colorMode_t;
 
-colorMode_t colorMode = rectifyColorMode;  
+colorMode_t colorMode = colorRollMode;  
 
 #if (STRIP_LENGTH >1)
-#define ONE_COLOR_STRIP 0  // change here to enable/disable
+#define ONE_COLOR_STRIP 1  // change here to enable/disable
 #else
 #define ONE_COLOR_STRIP 0
 #endif
@@ -236,11 +236,27 @@ static inline void rainbowColorMove() {
 
 static inline void colorRoll() {
   float g = sqrt(x*x+y*y+z*z);
-  float t = THETA_SCALE*acos(z/g)+THETA_0;
+  float t = THETA_SCALE*acos(x/g)+THETA_0;
+
+  if (abs(z) < 0.4*ACCEL_MAX_VAL) {
+    bValue = (int)constrain((LED_MAX_VAL*(sin(t)/2+rOffset))-COLOR_OFFSET, LED_MIN_VAL, LED_MAX_VAL);
+    gValue = (int)constrain((LED_MAX_VAL*(sin(t+TWO_PI/3)/2+gOffset))-COLOR_OFFSET, LED_MIN_VAL, LED_MAX_VAL);
+    rValue = (int)constrain((LED_MAX_VAL*(sin(t+2*TWO_PI/3)/2+bOffset))-COLOR_OFFSET, LED_MIN_VAL, LED_MAX_VAL);
+  } 
+  else {
+    bValue = 0;
+    gValue = 0;
+    rValue = 0;
+  }
+}
+
+static inline void colorRollWave() {
+  float g = sqrt(x*x+y*y+z*z);
+  float t = THETA_SCALE*acos(x/g)+THETA_0;
   float delta=PI/20;
   long new_color = 0;
 
-  //Pre-fill the color array with known values
+  //Fill the color array with values
   for(int i = 0 ; i < STRIP_LENGTH ; i++) {
     new_color = 0;
 
@@ -254,6 +270,7 @@ static inline void colorRoll() {
     new_color <<= 8; 
     new_color |= bValue;
 
+    new_color = 0;
     strip_colors[i] = new_color;
   }
 }
@@ -332,6 +349,10 @@ void updateColor() {
     colorRoll();
     break;
 
+  case colorRollWaveMode:
+    colorRollWave();
+    break;
+
   case colorRollPulseMode:
     colorRollPulse();
     break;
@@ -386,11 +407,12 @@ void updateColor() {
     //case rainbowColorMode:
   case rainbowColorMoveMode:
     // full sequence already done in rainbow
+  case colorRollWaveMode:
     break;
 
     //case thresholdColorMode:
     //case rectifyColorMode:
-    //case colorRollMode:
+  case colorRollMode:
 
   default:
     //First, shuffle all the current colors down one spot on the strip
@@ -447,6 +469,11 @@ void post_frame (void) {
   digitalWrite(CKI, LOW);
   delayMicroseconds(500); //Wait for 500us to go into reset
 }
+
+
+
+
+
 
 
 

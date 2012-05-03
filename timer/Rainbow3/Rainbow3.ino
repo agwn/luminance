@@ -66,6 +66,17 @@ void setup()  {
 void loop()  { 
   // set the brightness of led pin:
   updateColor();
+  analogWrite(pwmPins[REDID], rValue);
+  analogWrite(pwmPins[GREENID], gValue);
+  analogWrite(pwmPins[BLUEID], bValue);
+
+#if DEBUG  
+  Serial.print(rValue);
+  Serial.print(", ");
+  Serial.print(gValue);
+  Serial.print(", ");
+  Serial.println(bValue);
+#endif
 
   // wait for 30 milliseconds to see the dimming effect    
   delay(30);                            
@@ -78,17 +89,6 @@ void updateColor() {
   gValue = (int)constrain((PWM_MAX_VAL*(sin(tm+TWO_PI/3)/2+gOffset)), PWM_MIN_VAL, PWM_MAX_VAL);
   rValue = (int)constrain((PWM_MAX_VAL*(sin(tm+2*TWO_PI/3)/2+bOffset)), PWM_MIN_VAL, PWM_MAX_VAL);
 
-  analogWrite(pwmPins[REDID], rValue);
-  analogWrite(pwmPins[GREENID], gValue);
-  analogWrite(pwmPins[BLUEID], bValue);
-
-#if DEBUG  
-  Serial.print(rValue);
-  Serial.print(", ");
-  Serial.print(gValue);
-  Serial.print(", ");
-  Serial.println(bValue);
-#endif
 }
 
 

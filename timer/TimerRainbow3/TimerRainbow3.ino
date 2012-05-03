@@ -8,58 +8,21 @@
  
  */
 
-#include <TimerThree.h>
-
-/* 
- * input: serial data stream of chars for each button pressed
- * output: a particular pulse for ~1ms at around 60hz 
- * licence: this code is too crap to own, have at it
- */
-#define DEBUG 1
-#define EN_SS 1  // enable screen saver
-
-#define cbi(sfr, bit) (_SFR_BYTE(sfr) &= ~_BV(bit))
-#define sbi(sfr, bit) (_SFR_BYTE(sfr) |= _BV(bit))
-
-// about the period of 60hz in usec
-const long MAX_DUTY_CYCLE = 1024;
-const long SIXTY_HZ_INTERVAL = 16643;  // uS
-const long PULSE_DURATION = 2000;      // uS
-
-
 //
 // pins defined
 //
 const int ledPin = 13;
 
-#define REDID   0
-#define GREENID 1
-#define BLUEID  2
+#define REDID    0
+#define GREENID  1
+#define BLUEID   2
 #define MIN_COLOR REDID
 #define MAX_COLOR BLUEID
-
 int colorID = REDID;
-
-//#define RED  0x01
-//#define BLUE 0x02
-//#define GREEN 0x04
-
-// RED
-// GREEN
-// BLUE
-// RED + GREEN
-// RED + BLUE
-// GREEN + BLUE
-// RED + GREEN + BLUE
-
-//const int colorSeqLen = 7; 
-//const int colorSeq[colorSeqLen] = {
-//  RED, GREEN, BLUE, RED|GREEN, RED|BLUE, GREEN|BLUE, RED|GREEN|BLUE};
-//int colorSeqID = 0;
 
 const int pwmPinCnt = 3;
 const int pwmPins[pwmPinCnt] = { 
-  2, 3, 5};
+  3, 5, 6};
 
 //
 // length of pulse in period over 1024
@@ -94,22 +57,12 @@ int bValue = PWM_MAX_VAL;
 // do this once
 void setup()
 {
-  // start serial port at 57600 bps bc thats how i roll 
-  // it also aides in wireless programming with the Fio (pure sex)
-  Serial.begin(57600);
-
   pinMode(ledPin, OUTPUT);
   digitalWrite(ledPin, HIGH);
 
   for (int i=0; i<pwmPinCnt; i++) {
     pinMode(pwmPins[i],OUTPUT);
   }
-
-  Timer3.initialize(SIXTY_HZ_INTERVAL); // initialize Timer3, and set a 1/60 second period
-  for(int i=0; i<pwmPinCnt; i++) {
-    Timer3.pwm(pwmPins[i], pwmDutyCycle[i], SIXTY_HZ_INTERVAL);
-  }
-  Timer3.attachInterrupt(callback); // attaches callback() as a timer overflow interrupt
 }
 
 
