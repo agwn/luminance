@@ -7,14 +7,14 @@
 #define DEBUG_TURN   0
 #define SERIAL_TEST  0
 
-#define DELAY_TIME       50
+#define DELAY_TIME       250
 #define RESET_DELAY      250
 #define RAINBOW_ON_DUR  2000
 #define SHAKE_ON_DUR    1000
 #define STROBE_ON_DUR    250
 
-#define THRESH_UP     0.70
-#define THRESH_FLAT   0.30
+#define THRESH_UP     0.65
+#define THRESH_FLAT   0.35
 
 #define G_THRESH      1.9
 #define ACCEL_THRESH  1.5
@@ -93,12 +93,14 @@ colorMode_t;
 
 static colorMode_t colorMode = rainbowColorMode;  
 
-const int SDI = 8; //LED strip data
-const int CKI = 7; //LED strip clock
+//const int SDI = 8; //LED strip data
+//const int CKI = 7; //LED strip clock
+const int SDI = 7; //LED strip data
+const int CKI = 8; //LED strip clock
 
 //#define STRIP_LENGTH 32 //32 LEDs on this strip
-#define STRIP_LENGTH 64   //#LEDs on this strip
-#define HALF_STRIP_LEN 32  //(STRIP_LENGTH/2)
+#define STRIP_LENGTH 6   //#LEDs on this strip
+#define HALF_STRIP_LEN 3  //(STRIP_LENGTH/2)
 
 #define LOOP_STRIP 0
 #define SHUFFLE_FULL_STRIP 0
@@ -414,7 +416,8 @@ void updateColor() {
       new_up_color = 0;
     }
     else {
-      new_up_color = 0xFF;
+      //new_up_color = 0xFF;
+      new_up_color = 0xFF00;
     }
     new_down_color = 0;
     break;

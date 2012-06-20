@@ -5,15 +5,15 @@
 #define DEBUG_LEDS   1
 
 //#define STRIP_LENGTH 32 // 32 LEDs on this strip
-#define STRIP_LENGTH 20   // # LEDs on this strip
-
-const int SDI = 8;
-const int CKI = 7;
+#define STRIP_LENGTH 6   // # LEDs on this strip
 
 #define DELAY_TIME  10
 #define RESET_DELAY 250
 #define RAINBOW_ON_DUR 1000
 #define SHAKE_ON_DUR  500
+#define MAIN_AXIS y
+
+
 #define STROBE_ON_DUR 100
 
 #define G_THRESH  1.9
@@ -236,7 +236,7 @@ static inline void rainbowColorMove() {
 
 static inline void colorRoll() {
   float g = sqrt(x*x+y*y+z*z);
-  float t = THETA_SCALE*acos(x/g)+THETA_0;
+  float t = THETA_SCALE*acos(MAIN_AXIS/g)+THETA_0;
 
   if (abs(z) < 0.4*ACCEL_MAX_VAL) {
     bValue = (int)constrain((LED_MAX_VAL*(sin(t)/2+rOffset))-COLOR_OFFSET, LED_MIN_VAL, LED_MAX_VAL);
@@ -252,7 +252,7 @@ static inline void colorRoll() {
 
 static inline void colorRollWave() {
   float g = sqrt(x*x+y*y+z*z);
-  float t = THETA_SCALE*acos(x/g)+THETA_0;
+  float t = THETA_SCALE*acos(MAIN_AXIS/g)+THETA_0;
   float delta=PI/20;
   long new_color = 0;
 
@@ -277,7 +277,7 @@ static inline void colorRollWave() {
 
 static inline void colorRollPulse() {
   float g = sqrt(x*x+y*y+z*z);
-  float t = THETA_SCALE*acos(z/g)+THETA_0;
+  float t = THETA_SCALE*acos(MAIN_AXIS/g)+THETA_0;
 
   bValue = (int)constrain((LED_MAX_VAL*(sin(t)/2+rOffset)), LED_MIN_VAL, LED_MAX_VAL);
   gValue = (int)constrain((LED_MAX_VAL*(sin(t+TWO_PI/3)/2+gOffset)), LED_MIN_VAL, LED_MAX_VAL);

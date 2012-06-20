@@ -4,6 +4,8 @@
 #define DEBUG_ACCEL  0
 #define DEBUG_LEDS   0
 
+#define MAIN_AXIS z
+
 //#define STRIP_LENGTH 32 // 32 LEDs on this strip
 //#define STRIP_LENGTH 64   // # LEDs on this strip
 #define STRIP_LENGTH 20   // # LEDs on this strip
@@ -205,7 +207,7 @@ static inline void rainbowColor() {
     if (abs(z) < (ACCEL_THRESH*ACCEL_MAX_VAL)) {
       selectActive = true;
       Serial.println("active");
-      startTime = millis(); 
+      //startTime = millis(); 
       //startTime = (millis()-lastValue); 
     }
   }
@@ -220,10 +222,21 @@ static inline void rainbowColor() {
 }
 
 
+static inline void colorRoll() {
+  //float g = sqrt(x*x+y*y+z*z);
+  float g = 128;  // hack to not glitch the system. think sqrt is eating CPU cycles.
+  float t = THETA_SCALE*acos(MAIN_AXIS/g)+THETA_0;
+
+    bValue = (int)constrain((LED_MAX_VAL*(sin(t)/2+rOffset))-COLOR_OFFSET, LED_MIN_VAL, LED_MAX_VAL);
+    gValue = (int)constrain((LED_MAX_VAL*(sin(t+TWO_PI/3)/2+gOffset))-COLOR_OFFSET, LED_MIN_VAL, LED_MAX_VAL);
+    rValue = (int)constrain((LED_MAX_VAL*(sin(t+2*TWO_PI/3)/2+bOffset))-COLOR_OFFSET, LED_MIN_VAL, LED_MAX_VAL);
+}
+
 void updateColor() {
   int i;
 
-  rainbowColor();
+  //rainbowColor();
+  colorRoll;
 
   //Now form a new RGB color
   long new_color = 0;
