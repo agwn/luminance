@@ -6,7 +6,7 @@
 #define ENABLE_SLEEP 1
 
 #define DEBUG 0
-#define DEBUG_ACCEL  0
+#define DEBUG_ACCEL  1
 #define DEBUG_SLEEP 0
 
 //
@@ -16,58 +16,34 @@
 const int wakePin = 2;
 
 const int ledPin = 13;
+const int CS = 10;  //Assign the Chip Select signal to pin 10.
 
-#define REDID    0
-#define GREENID  1
-#define BLUEID   2
-#define MIN_COLOR REDID
-#define MAX_COLOR BLUEID
+#define BACK_RED     4
+#define BACK_BLUE_R  5
+#define BACK_BLUE_L  6
+#define FRONT_GREEN  7
+#define FRONT_RED    8
+#define FRONT_BLUE   9
 
-int colorID = REDID;
+#define FIRST_COLOR  4
+#define NUM_COLORS   6
 
-const int pwmPinCnt = 3;
-const int pwmPins[pwmPinCnt] = { 
-  6, 5, 9};
 
-int brightness = 5;    // how bright the LED is
-int fadeAmount = 5;    // how many points to fade the LED by
-
-//
-// length of pulse in period over 1024
-//
-#define PWM_MIN_VAL  0
-#define PWM_MAX_VAL  255
-#define PWM_DEF_VAL  ((int)((PWM_MAX_VAL+PWM_MIN_VAL)/2.0))
-int pwmDutyCycle[pwmPinCnt] = {
-  PWM_DEF_VAL, PWM_DEF_VAL, PWM_DEF_VAL};
-
-// modulating background color
-//float oSpeed = .000075;
-float oSpeed = 0.00025;
-
-const float rOffset = PWM_DEF_VAL/(float)PWM_MAX_VAL;
-const float gOffset = PWM_DEF_VAL/(float)PWM_MAX_VAL;
-const float bOffset = PWM_DEF_VAL/(float)PWM_MAX_VAL;
-
-int rValue = PWM_MAX_VAL;
-int gValue = PWM_MAX_VAL;
-int bValue = PWM_MAX_VAL;
-
-const unsigned long wakeDuration = 6000; // 6 seconds
-
-int sleepStatus = 0;  // variable to store a request for sleep
-unsigned long wakeTime = 0;
-
-//Assign the Chip Select signal to pin 10.
-int CS=10;
-
-#define RANGE_2G  1
-
-// 56 counts/G for 2G, 14 counts/G for 8G
+#define RANGE_2G  0
 #if RANGE_2G
-#define COUNTS_PER_G  56
+#define COUNTS_PER_G  56  // 56 counts/G for 2G
+// Activate measurement mode: 2g/100Hz
+#define ACTIVE_CONFIG   (G_RANGE_2 | INT_LEVEL_LOW | I2C_DIS | MODE_100 | INT_DIS)
+// Motion detect mode: 2g/10Hz
+#define SLEEP_CONFIG    (G_RANGE_2 | INT_LEVEL_LOW | MDET_NO_EXIT | I2C_DIS | MODE_MD_10)
+#define MOTION_THRESH   0x10
 #else
-#define COUNTS_PER_G  14
+#define COUNTS_PER_G  14  // 14 counts/G for 8G
+// Activate measurement mode: 2g/40Hz
+#define ACTIVE_CONFIG   (INT_LEVEL_LOW | I2C_DIS | MODE_40 | INT_DIS)
+// Motion detect mode: 2g/10Hz
+#define SLEEP_CONFIG    (INT_LEVEL_LOW | MDET_NO_EXIT | I2C_DIS | MODE_MD_10)
+#define MOTION_THRESH   0x04
 #endif
 
 #define DELAY_TIME  20
@@ -118,6 +94,10 @@ typedef enum {
   sys_init = 0,
   sys_idle,
   sys_active,
+  sys_left_turn,
+  sys_right_turn,
+  sys_stop,
+  sys_nod,
   sys_sleep,
   sys_wake,
 }
@@ -125,9 +105,12 @@ sys_state_t;
 
 static sys_state_t state;
 
+const unsigned long wakeDuration = 750; // 0.75 seconds
+
+int sleepStatus = 0;  // variable to store a request for sleep
+unsigned long wakeTime = 0;
+
 //This buffer will hold values read from the ADXL345 registers.
-//char values[10];
-//char output[20];
 char intStatus=0;
 
 int revID;
@@ -164,8 +147,16 @@ void setup() {
   pinMode(ledPin, OUTPUT);
   digitalWrite(ledPin, HIGH);
 
-  for (int i=0; i<pwmPinCnt; i++) {
-    pinMode(pwmPins[i],OUTPUT);
+  for (int i=FIRST_COLOR; i<(FIRST_COLOR+NUM_COLORS); i++) {
+    digitalWrite(i,LOW);
+  }
+  for (int i=FIRST_COLOR; i<(FIRST_COLOR+NUM_COLORS); i++) {
+    pinMode(i,OUTPUT);
+  }
+  for (int i=FIRST_COLOR; i<(FIRST_COLOR+NUM_COLORS); i++) {
+    digitalWrite(i,HIGH);
+    delay(250);
+    digitalWrite(i,LOW);
   }
 
   wakeTime = millis();  // initalize wake time
@@ -204,19 +195,14 @@ void setup() {
   delayMicroseconds(44);
 
   // setup motion detection
-  writeRegister(MDTHR, 0x10);    // 286 mg
+  writeRegister(MDTHR, MOTION_THRESH);
   delayMicroseconds(44);
-  writeRegister(MDFFTMR, 0x10);  // 100ms
-  delayMicroseconds(44);
+  writeRegister(MDFFTMR, 0x12);  // using defaults of 300ms
+  //delayMicroseconds(44);
 
   // Activate measurement mode: 2g/400Hz, force SPI only comm, interrupts active low
-#if RANGE_2G
-  //writeRegister(CTRL, (G_RANGE_2 | INT_LEVEL_LOW | MDET_NO_EXIT | I2C_DIS | MODE_MD_10)); // Activate measurement mode: 2g/motion detect/10Hz
-  writeRegister(CTRL, (G_RANGE_2 | INT_LEVEL_LOW | I2C_DIS | MODE_40 | INT_DIS)); // Activate measurement mode: 2g/40Hz
-  //writeRegister(CTRL, (G_RANGE_2 | INT_LEVEL_LOW | I2C_DIS | MODE_400)); // Activate measurement mode: 2g/400Hz
-#else
-  writeRegister(CTRL, (INT_LEVEL_LOW | I2C_DIS | MODE_400)); // Activate measurement mode: 8g/400Hz
-#endif
+  //writeRegister(CTRL, SLEEP_CONFIG);
+  writeRegister(CTRL, ACTIVE_CONFIG);
   delayMicroseconds(44);
 
   // Dummy read to generate first INT pin Lo to Hi
@@ -254,36 +240,43 @@ void loop(){
   yg = y / (float)COUNTS_PER_G;
   zg = z / (float)COUNTS_PER_G;
 
-  /*
   if(intStatus > 0) {
-   if(FFDET & intStatus) {
-   Serial.println("FFDET");
-   Serial.print(x);
-   Serial.print(',');
-   Serial.print(y);
-   Serial.print(',');
-   Serial.println(z);
-   }
-   
-   if (MDET_MSK & intStatus) {
-   state = sys_active;
-   Serial.print("MDET: ");
-   intStatus &= MDET_MSK;
-   if (MDET_X_AXIS == intStatus) {
-   Serial.println("X");
-   } 
-   else if (MDET_Y_AXIS == intStatus) {
-   Serial.println("Y");
-   } 
-   else if (MDET_Z_AXIS == intStatus) {
-   Serial.println("Z");
-   }     
-   delay(50);
-   }
-   
-   intStatus=0;    
-   }
-   */
+    if(FFDET & intStatus) {
+      Serial.println("FFDET");
+      Serial.print(x);
+      Serial.print(',');
+      Serial.print(y);
+      Serial.print(',');
+      Serial.println(z);
+    }
+
+    if (MDET_MSK & intStatus) {
+      state = sys_active;
+      Serial.print("MDET: ");
+      intStatus &= MDET_MSK;
+      if (MDET_X_AXIS == intStatus) {
+        Serial.println("X");
+      } 
+      else if (MDET_Y_AXIS == intStatus) {
+        Serial.println("Y");
+      }
+    } 
+    else if (MDET_Z_AXIS == intStatus) {
+      Serial.println("Z");
+    }     
+    delay(50);
+    
+    if (abs(y)>7) {
+      if (y>0) {
+        digitalWrite(BACK_BLUE_R, HIGH);
+      }
+      else {
+        digitalWrite(BACK_BLUE_L, HIGH);
+      }
+    }
+
+    intStatus = readRegister(INT_STATUS);    
+  }
 
 #if DEBUG_ACCEL
   //Print the results to the terminal.
@@ -293,13 +286,11 @@ void loop(){
   Serial.print(y, DEC);
   Serial.print(',');
   Serial.println(z, DEC);
+  delay(20);
 #endif
 
   // set the brightness of led pin:
-  updateColor();
-  analogWrite(pwmPins[REDID], rValue);
-  analogWrite(pwmPins[GREENID], gValue);
-  analogWrite(pwmPins[BLUEID], bValue);
+  //updateColor();
 
 #if DEBUG  
   Serial.print(rValue);
@@ -307,6 +298,7 @@ void loop(){
   Serial.print(gValue);
   Serial.print(", ");
   Serial.println(bValue);
+  delay(20);
 #endif
   if ((millis() - wakeTime) >= wakeDuration) {
 #if DEBUG_SLEEP
@@ -327,13 +319,13 @@ void sleepNow()         // here we put the arduino to sleep
   state = sys_sleep;
 
   // turn off all leds
-  for (int i=0; i<pwmPinCnt; i++) {
-    analogWrite(pwmPins[i], 0);
+  for (int i=FIRST_COLOR; i<(FIRST_COLOR+NUM_COLORS); i++) {
+    digitalWrite(i,LOW);
   }
 
   // reset the accelerometer and put into motion detect mode
   //resetAccelerometer();
-  writeRegister(CTRL, (G_RANGE_2 | INT_LEVEL_LOW | MDET_NO_EXIT | I2C_DIS | MODE_MD_10)); // Activate measurement mode: 2g/motion detect/10Hz
+  writeRegister(CTRL, SLEEP_CONFIG);
 
   /* Time to set the sleep mode.
    *
@@ -385,7 +377,7 @@ void sleepNow()         // here we put the arduino to sleep
 
   state = sys_wake;
 
-  writeRegister(CTRL, (G_RANGE_2 | INT_LEVEL_LOW | I2C_DIS | MODE_40 | INT_DIS)); // Activate measurement mode: 2g/40Hz
+  writeRegister(CTRL, ACTIVE_CONFIG);
 
 #if DEBUG_SLEEP
   delay(50);
@@ -396,13 +388,13 @@ void sleepNow()         // here we put the arduino to sleep
 #endif
 }
 
-void updateColor() {
-  float tm = (float) millis() * oSpeed;
-
-  bValue = (int)constrain((PWM_MAX_VAL*(sin(tm)/2+rOffset)), PWM_MIN_VAL, PWM_MAX_VAL);
-  gValue = (int)constrain((PWM_MAX_VAL*(sin(tm+TWO_PI/3)/2+gOffset)), PWM_MIN_VAL, PWM_MAX_VAL);
-  rValue = (int)constrain((PWM_MAX_VAL*(sin(tm+2*TWO_PI/3)/2+bOffset)), PWM_MIN_VAL, PWM_MAX_VAL);
-}
+//void updateColor() {
+//  float tm = (float) millis() * oSpeed;
+//
+//  bValue = (int)constrain((PWM_MAX_VAL*(sin(tm)/2+rOffset)), PWM_MIN_VAL, PWM_MAX_VAL);
+//  gValue = (int)constrain((PWM_MAX_VAL*(sin(tm+TWO_PI/3)/2+gOffset)), PWM_MIN_VAL, PWM_MAX_VAL);
+//  rValue = (int)constrain((PWM_MAX_VAL*(sin(tm+2*TWO_PI/3)/2+bOffset)), PWM_MIN_VAL, PWM_MAX_VAL);
+//}
 
 unsigned char resetAccelerometer()
 {
@@ -455,6 +447,15 @@ unsigned char readRegister(unsigned char registerAddress)
   // Return new data from RX buffer
   return result;
 }
+
+
+
+
+
+
+
+
+
 
 
 

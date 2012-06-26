@@ -15,7 +15,7 @@ int CS=10;
 #define COUNTS_PER_G  14
 #endif
 
-#define DELAY_TIME  150
+#define DELAY_TIME  100
 
 
 // CMA3000 Registers
@@ -82,7 +82,7 @@ void setup() {
   pinMode(CS, OUTPUT);
   //Before communication starts, the Chip Select pin needs to have pull up enabled.
   digitalWrite(CS, HIGH);
-  
+
   pinMode(2, INPUT);
   digitalWrite(2, HIGH);
 
@@ -97,9 +97,10 @@ void setup() {
 
   // Activate measurement mode: 2g/400Hz, force SPI only comm, interrupts active low
 #if RANGE_2G
-  writeRegister(CTRL, (G_RANGE_2 | INT_LEVEL_LOW | I2C_DIS | MODE_400)); // Activate measurement mode: 2g/400Hz
+  //writeRegister(CTRL, (G_RANGE_2 | INT_LEVEL_LOW | I2C_DIS | MODE_40)); // Activate measurement mode: 2g/40Hz
+  writeRegister(CTRL, (G_RANGE_2 | INT_LEVEL_LOW | I2C_DIS | MODE_40 | INT_DIS)); // Activate measurement mode: 2g/40Hz
 #else
-  writeRegister(CTRL, (INT_LEVEL_LOW | I2C_DIS | MODE_400)); // Activate measurement mode: 8g/400Hz
+  writeRegister(CTRL, (INT_LEVEL_LOW | I2C_DIS | MODE_40)); // Activate measurement mode: 8g/400Hz
 #endif
   delayMicroseconds(44);
 
@@ -108,7 +109,7 @@ void setup() {
   x = readRegister(DOUTX);
 
   //Create an interrupt that will trigger when a motion event is detected.
-  attachInterrupt(0, accelEvent, FALLING);
+  //attachInterrupt(0, accelEvent, FALLING);
 }
 
 void accelEvent()
@@ -126,7 +127,7 @@ void loop(){
   delayMicroseconds(44);
   z = readRegister(DOUTZ); // Read DOUTZ register
   //delayMicroseconds(44);
-  
+
   // convert from 2s complement
   if (0x80 & x) {
     x = x-0xff;
@@ -225,6 +226,7 @@ unsigned char readRegister(unsigned char registerAddress)
   // Return new data from RX buffer
   return result;
 }
+
 
 
 
