@@ -6,7 +6,8 @@
 #define ENABLE_SLEEP 1
 
 #define DEBUG 0
-#define DEBUG_ACCEL  0
+#define DEBUG_STATE 0
+#define DEBUG_ACCEL 1
 #define DEBUG_SLEEP 0
 
 //
@@ -109,28 +110,36 @@ sys_state_t;
 
 static sys_state_t state;
 
-const unsigned long wakeDuration = 750; // 0.75 seconds
+const unsigned long wakeDuration = 1000; // 0.75 seconds
 
 int sleepStatus = 0;  // variable to store a request for sleep
 unsigned long wakeTime = 0;
 
 //This buffer will hold values read from the ADXL345 registers.
 char intStatus=0;
+#define NOAXIS 0xff
+int wakeAxis = NOAXIS;
 
 int revID;
-//These variables will be used to hold the x,y and z axis accelerometer values.
-int x,y,z;
-double xg, yg, zg;
 
 const unsigned int discardCnt = 1;
 const unsigned int maxSamples = 7;
 unsigned int sampleCnt = 0;
 
+//These variables will be used to hold the x,y and z axis accelerometer values.
+//int x,y,z;
 int a[3] = {
+  0, 0, 0};
+int last[3] = {
   0, 0, 0};
 int sum[3] = {
   0, 0, 0};
-
+float  g[3] = {
+  0.0, 0.0, 0.0};
+float avg[3] = {
+  0, 0, 0};
+float base[3] = {
+  0, 0, 0};
 
 void wakeUpNow()
 {
@@ -163,14 +172,16 @@ void setup() {
 
   for (int i=FIRST_COLOR; i<(FIRST_COLOR+NUM_COLORS); i++) {
     digitalWrite(i,LOW);
-  }
-  for (int i=FIRST_COLOR; i<(FIRST_COLOR+NUM_COLORS); i++) {
     pinMode(i,OUTPUT);
   }
   for (int i=FIRST_COLOR; i<(FIRST_COLOR+NUM_COLORS); i++) {
-    digitalWrite(i,HIGH);
+    for (int j = 0; j<4; j++) {
+      digitalWrite(i,HIGH);
+      delay(100);
+      digitalWrite(i,LOW);
+      delay(100);
+    }
     delay(250);
-    digitalWrite(i,LOW);
   }
 
   wakeTime = millis();  // initalize wake time
@@ -221,7 +232,9 @@ void setup() {
 
   // Dummy read to generate first INT pin Lo to Hi
   // transition in all situations, also while debugging
-  x = readRegister(DOUTX);
+  for (int i=0; i<3; i++) {
+    a[i] = readRegister(DOUTX+i);
+  }
 
   //Create an interrupt that will trigger when a motion event is detected.
   attachInterrupt(0, wakeUpNow, LOW);
@@ -231,41 +244,29 @@ void setup() {
 
 void loop(){
 
-  x = readRegister(DOUTX); // Read DOUTX register
-  delayMicroseconds(44);
-  y = readRegister(DOUTY); // Read DOUTY register
-  delayMicroseconds(44);
-  z = readRegister(DOUTZ); // Read DOUTZ register
-  //delayMicroseconds(44);
-
-  // convert from 2s complement
-  if (0x80 & x) {
-    x = x-0xff;
+  for (int i=0; i<3; i++) {
+    a[i] = readRegister(DOUTX+i); // Read DOUT* register
+    // convert from 2s complement
+    if (0x80 & a[i]) {
+      a[i] = a[i]-0xff;
+    }
+    //Convert the accelerometer value to G's. 
+    g[i] = a[i] / (float)COUNTS_PER_G;
+    delayMicroseconds(44);
   }
-  if (0x80 & y) {
-    y = y-0xff;
-  }
-  if (0x80 & z) {
-    z = z-0xff;
-  }
-
-  //Convert the accelerometer value to G's. 
-  xg = x / (float)COUNTS_PER_G;
-  yg = y / (float)COUNTS_PER_G;
-  zg = z / (float)COUNTS_PER_G;
 
   if(intStatus > 0) {
     if(FFDET & intStatus) {
       Serial.println("FFDET");
-      Serial.print(x);
+      Serial.print(a[XAXIS]);
       Serial.print(',');
-      Serial.print(y);
+      Serial.print(a[YAXIS]);
       Serial.print(',');
-      Serial.println(z);
+      Serial.println(a[ZAXIS]);
     }
 
     if (MDET_MSK & intStatus) {
-      state = sys_active;
+      //state = sys_active;
       sampleCnt = 0;
 
       sum[XAXIS] = sum[YAXIS] = sum[ZAXIS] = 0;
@@ -273,23 +274,39 @@ void loop(){
       Serial.print("MDET: ");
       intStatus &= MDET_MSK;
       if (MDET_X_AXIS == intStatus) {
+        wakeAxis = XAXIS;
         Serial.println("X");
       } 
       else if (MDET_Y_AXIS == intStatus) {
+        wakeAxis = YAXIS;
         Serial.println("Y");
       }
     } 
     else if (MDET_Z_AXIS == intStatus) {
+      wakeAxis = ZAXIS;
       Serial.println("Z");
+    } 
+    else {
+      wakeAxis = NOAXIS;
     }
 
     intStatus = readRegister(INT_STATUS);    
   }
 
   if ((discardCnt < sampleCnt) && (sampleCnt < maxSamples)) {
-    sum[XAXIS] += x;
-    sum[YAXIS] += y;
-    sum[ZAXIS] += z;
+    for (int i=0; i<3; i++) {
+      sum[i] += a[i] - last[i];
+    }
+    if (state == sys_wake) {
+      if (abs(sum[YAXIS])>10) {
+        if (a[YAXIS]>0) {
+          state = sys_right_turn;
+        }
+        else {
+          state = sys_left_turn;
+        }
+      }
+    }
 
 #if DEBUG_ACCEL
     //Print the results to the terminal.
@@ -297,26 +314,31 @@ void loop(){
     Serial.println(sum[YAXIS], DEC);
     delay(20);
 #endif
-
-    if (abs(sum[YAXIS])>12) {
-      if (y>0) {
-        digitalWrite(BACK_BLUE_R, HIGH);
-      }
-      else {
-        digitalWrite(BACK_BLUE_L, HIGH);
-      }
-    }
   }
   sampleCnt++;
+
+
+  switch (state) {
+  case sys_left_turn:
+    digitalWrite(BACK_BLUE_L, HIGH);
+    break;
+  case sys_right_turn:
+    digitalWrite(BACK_BLUE_R, HIGH);
+    break;
+  default:
+    digitalWrite(BACK_BLUE_L, LOW);
+    digitalWrite(BACK_BLUE_R, LOW);
+    break;
+  }
 
 #if DEBUG_ACCEL
   //Print the results to the terminal.
   Serial.print("accel: ");
-  Serial.print(x, DEC);
+  Serial.print(a[XAXIS], DEC);
   Serial.print(',');
-  Serial.print(y, DEC);
+  Serial.print(a[YAXIS], DEC);
   Serial.print(',');
-  Serial.println(z, DEC);
+  Serial.println(a[ZAXIS], DEC);
   delay(20);
 #endif
 
@@ -347,12 +369,18 @@ void loop(){
 
 void sleepNow()         // here we put the arduino to sleep
 {
-  state = sys_sleep;
+  for (int i=0; i<3; i++) {
+    last[i] = a[i];
+  }
 
   // turn off all leds
   for (int i=FIRST_COLOR; i<(FIRST_COLOR+NUM_COLORS); i++) {
     digitalWrite(i,LOW);
   }
+
+  state = sys_sleep;
+  wakeAxis = NOAXIS;
+  //intStatus = 0;
 
   // reset the accelerometer and put into motion detect mode
   //resetAccelerometer();
@@ -478,6 +506,19 @@ unsigned char readRegister(unsigned char registerAddress)
   // Return new data from RX buffer
   return result;
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
