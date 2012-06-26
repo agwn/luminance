@@ -6,7 +6,7 @@
 #define ENABLE_SLEEP 1
 
 #define DEBUG 0
-#define DEBUG_ACCEL  1
+#define DEBUG_ACCEL  0
 #define DEBUG_SLEEP 0
 
 //
@@ -28,6 +28,10 @@ const int CS = 10;  //Assign the Chip Select signal to pin 10.
 #define FIRST_COLOR  4
 #define NUM_COLORS   6
 
+
+#define XAXIS  0
+#define YAXIS  1
+#define ZAXIS  2
 
 #define RANGE_2G  0
 #if RANGE_2G
@@ -117,6 +121,16 @@ int revID;
 //These variables will be used to hold the x,y and z axis accelerometer values.
 int x,y,z;
 double xg, yg, zg;
+
+const unsigned int discardCnt = 1;
+const unsigned int maxSamples = 7;
+unsigned int sampleCnt = 0;
+
+int a[3] = {
+  0, 0, 0};
+int sum[3] = {
+  0, 0, 0};
+
 
 void wakeUpNow()
 {
@@ -252,6 +266,10 @@ void loop(){
 
     if (MDET_MSK & intStatus) {
       state = sys_active;
+      sampleCnt = 0;
+
+      sum[XAXIS] = sum[YAXIS] = sum[ZAXIS] = 0;
+
       Serial.print("MDET: ");
       intStatus &= MDET_MSK;
       if (MDET_X_AXIS == intStatus) {
@@ -263,10 +281,24 @@ void loop(){
     } 
     else if (MDET_Z_AXIS == intStatus) {
       Serial.println("Z");
-    }     
-    delay(50);
-    
-    if (abs(y)>7) {
+    }
+
+    intStatus = readRegister(INT_STATUS);    
+  }
+
+  if ((discardCnt < sampleCnt) && (sampleCnt < maxSamples)) {
+    sum[XAXIS] += x;
+    sum[YAXIS] += y;
+    sum[ZAXIS] += z;
+
+#if DEBUG_ACCEL
+    //Print the results to the terminal.
+    Serial.print("sum[y]: ");
+    Serial.println(sum[YAXIS], DEC);
+    delay(20);
+#endif
+
+    if (abs(sum[YAXIS])>12) {
       if (y>0) {
         digitalWrite(BACK_BLUE_R, HIGH);
       }
@@ -274,9 +306,8 @@ void loop(){
         digitalWrite(BACK_BLUE_L, HIGH);
       }
     }
-
-    intStatus = readRegister(INT_STATUS);    
   }
+  sampleCnt++;
 
 #if DEBUG_ACCEL
   //Print the results to the terminal.
@@ -447,6 +478,12 @@ unsigned char readRegister(unsigned char registerAddress)
   // Return new data from RX buffer
   return result;
 }
+
+
+
+
+
+
 
 
 
