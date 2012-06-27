@@ -7,7 +7,7 @@
 
 #define DEBUG 0
 #define DEBUG_STATE 0
-#define DEBUG_ACCEL 1
+#define DEBUG_ACCEL 0
 #define DEBUG_SLEEP 0
 
 //
@@ -41,14 +41,21 @@ const int CS = 10;  //Assign the Chip Select signal to pin 10.
 #define ACTIVE_CONFIG   (G_RANGE_2 | INT_LEVEL_LOW | I2C_DIS | MODE_100 | INT_DIS)
 // Motion detect mode: 2g/10Hz
 #define SLEEP_CONFIG    (G_RANGE_2 | INT_LEVEL_LOW | MDET_NO_EXIT | I2C_DIS | MODE_MD_10)
-#define MOTION_THRESH   0x10
+#define MD_THRESH   0x20
+// threshold for responding to signals
+#define TURN_THRESH 10
+#define NOD_THRESH  10
+#define 
 #else
 #define COUNTS_PER_G  14  // 14 counts/G for 8G
 // Activate measurement mode: 2g/40Hz
 #define ACTIVE_CONFIG   (INT_LEVEL_LOW | I2C_DIS | MODE_40 | INT_DIS)
 // Motion detect mode: 2g/10Hz
 #define SLEEP_CONFIG    (INT_LEVEL_LOW | MDET_NO_EXIT | I2C_DIS | MODE_MD_10)
-#define MOTION_THRESH   0x04
+#define MD_THRESH   0x04
+// threshold for responding to signals
+#define TURN_THRESH 10
+#define NOD_THRESH  10
 #endif
 
 #define DELAY_TIME  20
@@ -177,9 +184,9 @@ void setup() {
   for (int i=FIRST_COLOR; i<(FIRST_COLOR+NUM_COLORS); i++) {
     for (int j = 0; j<4; j++) {
       digitalWrite(i,HIGH);
-      delay(100);
+      delay(50);
       digitalWrite(i,LOW);
-      delay(100);
+      delay(50);
     }
     delay(250);
   }
@@ -220,7 +227,7 @@ void setup() {
   delayMicroseconds(44);
 
   // setup motion detection
-  writeRegister(MDTHR, MOTION_THRESH);
+  writeRegister(MDTHR, MD_THRESH);
   delayMicroseconds(44);
   writeRegister(MDFFTMR, 0x12);  // using defaults of 300ms
   //delayMicroseconds(44);
@@ -271,20 +278,28 @@ void loop(){
 
       sum[XAXIS] = sum[YAXIS] = sum[ZAXIS] = 0;
 
+#if DEBUG_ACCEL
       Serial.print("MDET: ");
+#endif
       intStatus &= MDET_MSK;
       if (MDET_X_AXIS == intStatus) {
         wakeAxis = XAXIS;
+#if DEBUG_ACCEL
         Serial.println("X");
+#endif
       } 
       else if (MDET_Y_AXIS == intStatus) {
         wakeAxis = YAXIS;
+#if DEBUG_ACCEL
         Serial.println("Y");
+#endif
       }
     } 
     else if (MDET_Z_AXIS == intStatus) {
       wakeAxis = ZAXIS;
+#if DEBUG_ACCEL
       Serial.println("Z");
+#endif
     } 
     else {
       wakeAxis = NOAXIS;
@@ -298,25 +313,61 @@ void loop(){
       sum[i] += a[i] - last[i];
     }
     if (state == sys_wake) {
-      if (abs(sum[YAXIS])>10) {
-        if (a[YAXIS]>0) {
-          state = sys_right_turn;
+      switch (wakeAxis) {
+      case XAXIS:
+        if (abs(sum[XAXIS])>NOD_THRESH) {
+          if (sum[XAXIS]>0) {
+            state = sys_stop;
+          }
+          else {
+            state = sys_nod;
+          }
         }
-        else {
-          state = sys_left_turn;
+
+        break;
+
+      case YAXIS:
+        if (abs(sum[YAXIS])>TURN_THRESH) {
+          if (sum[YAXIS]>0) {
+            state = sys_right_turn;
+          }
+          else {
+            state = sys_left_turn;
+          }
         }
+        break;
+
+      case ZAXIS:
+        break;
+
+      default:
+        break;
       }
     }
 
 #if DEBUG_ACCEL
     //Print the results to the terminal.
-    Serial.print("sum[y]: ");
-    Serial.println(sum[YAXIS], DEC);
+    switch (wakeAxis) {
+    case XAXIS:
+      Serial.print("sum[x]: ");
+      Serial.println(sum[XAXIS], DEC);
+      break;
+
+    case YAXIS:
+      Serial.print("sum[y]: ");
+      Serial.println(sum[YAXIS], DEC);
+      break;
+
+    default:
+
+      Serial.print("WTF? sum[z]: ");
+      Serial.println(sum[ZAXIS], DEC);
+      break;
+    }
     delay(20);
 #endif
   }
   sampleCnt++;
-
 
   switch (state) {
   case sys_left_turn:
@@ -324,6 +375,12 @@ void loop(){
     break;
   case sys_right_turn:
     digitalWrite(BACK_BLUE_R, HIGH);
+    break;
+  case sys_nod:
+    digitalWrite(FRONT_GREEN, HIGH);
+    break;
+  case sys_stop:
+    digitalWrite(BACK_RED, HIGH);
     break;
   default:
     digitalWrite(BACK_BLUE_L, LOW);
@@ -506,6 +563,12 @@ unsigned char readRegister(unsigned char registerAddress)
   // Return new data from RX buffer
   return result;
 }
+
+
+
+
+
+
 
 
 
