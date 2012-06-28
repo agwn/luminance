@@ -7,7 +7,7 @@
 
 #define DEBUG 0
 #define DEBUG_STATE 0
-#define DEBUG_ACCEL 0
+#define DEBUG_ACCEL 1
 #define DEBUG_SLEEP 0
 
 //
@@ -45,6 +45,7 @@ const int CS = 10;  //Assign the Chip Select signal to pin 10.
 // threshold for responding to signals
 #define TURN_THRESH 10
 #define NOD_THRESH  10
+#define MAX_OFFSET  3
 #define 
 #else
 #define COUNTS_PER_G  14  // 14 counts/G for 8G
@@ -56,6 +57,7 @@ const int CS = 10;  //Assign the Chip Select signal to pin 10.
 // threshold for responding to signals
 #define TURN_THRESH 10
 #define NOD_THRESH  10
+#define MAX_OFFSET  3
 #endif
 
 #define DELAY_TIME  20
@@ -117,7 +119,7 @@ sys_state_t;
 
 static sys_state_t state;
 
-const unsigned long wakeDuration = 1000; // 0.75 seconds
+const unsigned long wakeDuration = 750; // 0.75 seconds
 
 int sleepStatus = 0;  // variable to store a request for sleep
 unsigned long wakeTime = 0;
@@ -319,9 +321,9 @@ void loop(){
           if (sum[XAXIS]>0) {
             state = sys_stop;
           }
-          else {
-            state = sys_nod;
-          }
+          //else {
+          //state = sys_nod;
+          //}
         }
 
         break;
@@ -426,10 +428,6 @@ void loop(){
 
 void sleepNow()         // here we put the arduino to sleep
 {
-  for (int i=0; i<3; i++) {
-    last[i] = a[i];
-  }
-
   // turn off all leds
   for (int i=FIRST_COLOR; i<(FIRST_COLOR+NUM_COLORS); i++) {
     digitalWrite(i,LOW);
@@ -438,6 +436,19 @@ void sleepNow()         // here we put the arduino to sleep
   state = sys_sleep;
   wakeAxis = NOAXIS;
   //intStatus = 0;
+
+  for (int i=0; i<3; i++) {
+    if (a[i] < -1*MAX_OFFSET) {
+      last[i] = -1*MAX_OFFSET;
+    } 
+    else if (a[i] > MAX_OFFSET) {
+      last[i] = MAX_OFFSET;
+    } 
+    else {
+      last[i] = a[i];
+    }
+  }
+  last[XAXIS] = 0; // dirty hack
 
   // reset the accelerometer and put into motion detect mode
   //resetAccelerometer();
@@ -563,6 +574,10 @@ unsigned char readRegister(unsigned char registerAddress)
   // Return new data from RX buffer
   return result;
 }
+
+
+
+
 
 
 
