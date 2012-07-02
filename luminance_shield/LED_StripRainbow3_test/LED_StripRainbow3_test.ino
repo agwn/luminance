@@ -37,6 +37,8 @@
  Red = SDI
  */
 
+#define DEBUG 1
+
 const int ledPin = 13; //On board LED
 
 #define POS_OUT_LOGIC 0
@@ -97,11 +99,6 @@ void setup() {
     pinMode(SDI[i], OUTPUT);
     pinMode(CKI[i], OUTPUT);
   }
-
-  // shut down unused channel
-  digitalWrite(PWR[CHAN_1], OUTPUT_HIGH);
-  digitalWrite(SDI[CHAN_1], OUTPUT_HIGH);
-  digitalWrite(CKI[CHAN_1], OUTPUT_HIGH);
 
   Serial.begin(57600);
   Serial.println("Hello!");

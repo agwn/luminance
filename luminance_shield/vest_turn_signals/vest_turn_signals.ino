@@ -19,12 +19,12 @@ const int wakePin = 2;
 const int ledPin = 13;
 const int CS = 10;  //Assign the Chip Select signal to pin 10.
 
-#define BACK_RED     4
-#define RIGHT_BLUE   5
-#define LEFT_BLUE    6
-#define FRONT_RED    7
-#define BACK_GREEN   8
-#define FRONT_GREEN  9
+#define LEFT_GREEN  4
+#define LEFT_RED    5
+#define LEFT_BLUE   6
+#define RIGHT_GREEN 7
+#define RIGHT_RED   8
+#define RIGHT_BLUE  9
 
 #define FIRST_COLOR  4
 #define NUM_COLORS   6
@@ -141,8 +141,8 @@ int a[3] = {
   0, 0, 0};
 int last[3] = {
   0, 0, 0};
-int sum[3] = {
-  0, 0, 0};
+//int sum[3] = {
+//  0, 0, 0};
 float  g[3] = {
   0.0, 0.0, 0.0};
 float avg[3] = {
@@ -278,8 +278,6 @@ void loop(){
       //state = sys_active;
       sampleCnt = 0;
 
-      sum[XAXIS] = sum[YAXIS] = sum[ZAXIS] = 0;
-
 #if DEBUG_ACCEL
       Serial.print("MDET: ");
 #endif
@@ -309,67 +307,17 @@ void loop(){
 
     intStatus = readRegister(INT_STATUS);    
   }
-
-  if ((discardCnt < sampleCnt) && (sampleCnt < maxSamples)) {
-    for (int i=0; i<3; i++) {
-      sum[i] += a[i] - last[i];
-    }
-    if (state == sys_wake) {
-      switch (wakeAxis) {
-      case XAXIS:
-        if (abs(sum[XAXIS])>NOD_THRESH) {
-          if (sum[XAXIS]<0) {
-            state = sys_stop;
-          }
-          //else {
-          //state = sys_nod;
-          //}
-        }
-
-        break;
-
-      case YAXIS:
-        if (abs(sum[YAXIS])>TURN_THRESH) {
-          if (sum[YAXIS]<0) {
-            state = sys_right_turn;
-          }
-          else {
-            state = sys_left_turn;
-          }
-        }
-        break;
-
-      case ZAXIS:
-        break;
-
-      default:
-        break;
-      }
-    }
-
-#if DEBUG_ACCEL
-    //Print the results to the terminal.
-    switch (wakeAxis) {
-    case XAXIS:
-      Serial.print("sum[x]: ");
-      Serial.println(sum[XAXIS], DEC);
-      break;
-
-    case YAXIS:
-      Serial.print("sum[y]: ");
-      Serial.println(sum[YAXIS], DEC);
-      break;
-
-    default:
-
-      Serial.print("WTF? sum[z]: ");
-      Serial.println(sum[ZAXIS], DEC);
-      break;
-    }
-    delay(20);
-#endif
-  }
   sampleCnt++;
+  
+  if (a[YAXIS] < -9) {
+    state = sys_left_turn;
+  } else if (a[XAXIS] > 11) {
+    state = sys_right_turn;
+  } else if (a[XAXIS] < -11) {
+    state = sys_stop;
+  } else {
+    state = sys_wake;
+  }
 
   switch (state) {
   case sys_left_turn:
@@ -379,11 +327,12 @@ void loop(){
     digitalWrite(RIGHT_BLUE, HIGH);
     break;
   case sys_nod:
-    digitalWrite(FRONT_GREEN, HIGH);
+    digitalWrite(LEFT_GREEN, HIGH);
+    digitalWrite(RIGHT_GREEN, HIGH);
     break;
   case sys_stop:
-    digitalWrite(FRONT_RED, HIGH);
-    digitalWrite(BACK_RED, HIGH);
+    digitalWrite(LEFT_RED, HIGH);
+    digitalWrite(RIGHT_RED, HIGH);
     break;
   default:
     digitalWrite(LEFT_BLUE, LOW);
