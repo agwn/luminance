@@ -62,7 +62,7 @@ const int SDI[CHAN_CNT] = {
 const int CKI[CHAN_CNT] = {
   7, 4};
 
-#define STRIP_LENGTH 6
+#define STRIP_LENGTH 8
 //# LEDs on this strip
 long strip_colors[STRIP_LENGTH];
 
@@ -110,6 +110,7 @@ void setup() {
   }
   //post_frame();
   post_frame(CHAN_0);
+  post_frame(CHAN_1);
 
   delay(1000);
 
@@ -123,6 +124,7 @@ void loop() {
     //loopColor();
     //post_frame(); //Push the current color frame to the strip
     post_frame(CHAN_0); //Push the current color frame to the strip
+    post_frame(CHAN_1);
 
     delay(cycleDelay);                  // wait for a while
   }
@@ -231,4 +233,5 @@ void post_frame (int ch) {
   digitalWrite(CKI[ch], OUTPUT_LOW);
   delayMicroseconds(500); //Wait for 500us to go into reset
 }
+
 

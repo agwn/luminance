@@ -1,14 +1,50 @@
+/*
+  Nathan Seidle
+ SparkFun Electronics 2011
+ 
+ This code is public domain but you buy me a beer if you use this and we meet someday (Beerware license).
+ 
+ Controlling an LED strip with individually controllable RGB LEDs. This stuff is awesome.
+ 
+ The SparkFun (individually controllable) RGB strip contains a bunch of WS2801 ICs. These
+ are controlled over a simple data and clock setup. The WS2801 is really cool! Each IC has its
+ own internal clock so that it can do all the PWM for that specific LED for you. Each IC
+ requires 24 bits of 'greyscale' data. This means you can have 256 levels of red, 256 of blue,
+ and 256 levels of green for each RGB LED. REALLY granular.
+ 
+ To control the strip, you clock in data continually. Each IC automatically passes the data onto
+ the next IC. Once you pause for more than 500us, each IC 'posts' or begins to output the color data
+ you just clocked in. So, clock in (24bits * 32LEDs = ) 768 bits, then pause for 500us. Then
+ repeat if you wish to display something new.
+ 
+ This example code will display bright red, green, and blue, then 'trickle' random colors down 
+ the LED strip.
+ 
+ */
+
 //Add the SPI library so we can communicate with the CMA3000 sensor
 #include <SPI.h>
 #include <avr/sleep.h>
 
-#define RELEASE_MODE 1
-#define ENABLE_SLEEP 1
 
-#define DEBUG 0
+#define RELEASE_MODE 1
+#define ENABLE_SLEEP 0
+
+#define DEBUG 1
 #define DEBUG_STATE 0
-#define DEBUG_ACCEL 0
+#define DEBUG_ACCEL 1
 #define DEBUG_SLEEP 0
+
+
+#define POS_OUT_LOGIC 0
+
+#if POS_OUT_LOGIC
+#define OUTPUT_HIGH HIGH
+#define OUTPUT_LOW LOW
+#else
+#define OUTPUT_HIGH LOW
+#define OUTPUT_LOW HIGH
+#endif
 
 //
 // pins defined
@@ -18,17 +54,6 @@ const int wakePin = 2;
 
 const int ledPin = 13;
 const int CS = 10;  //Assign the Chip Select signal to pin 10.
-
-#define LEFT_GREEN  4
-#define LEFT_RED    5
-#define LEFT_BLUE   6
-#define RIGHT_GREEN 7
-#define RIGHT_RED   8
-#define RIGHT_BLUE  9
-
-#define FIRST_COLOR  4
-#define NUM_COLORS   6
-
 
 #define XAXIS  0
 #define YAXIS  1
@@ -119,8 +144,7 @@ sys_state_t;
 
 static sys_state_t state;
 
-const int blinkTime = 250;
-const unsigned long wakeDuration = 5000; // 5 seconds
+const unsigned long wakeDuration = 750; // 0.75 seconds
 
 int sleepStatus = 0;  // variable to store a request for sleep
 unsigned long wakeTime = 0;
@@ -140,8 +164,8 @@ unsigned int sampleCnt = 0;
 //int x,y,z;
 int a[3] = {
   0, 0, 0};
-//int last[3] = {
-//  0, 0, 0};
+int last[3] = {
+  0, 0, 0};
 //int sum[3] = {
 //  0, 0, 0};
 float  g[3] = {
@@ -150,6 +174,41 @@ float avg[3] = {
   0, 0, 0};
 float base[3] = {
   0, 0, 0};
+
+#define CHAN_CNT 2
+#define CHAN_0 0
+#define CHAN_1 1
+
+const int PWR[CHAN_CNT] = {
+  9, 6};
+const int SDI[CHAN_CNT] = {
+  8, 5};
+const int CKI[CHAN_CNT] = {
+  7, 4};
+
+#define STRIP_LENGTH 8
+//# LEDs on this strip
+long strip_colors[STRIP_LENGTH];
+
+const int pwmPinCnt = 3;
+#define PWM_MIN_VAL  0
+#define PWM_MAX_VAL  64
+#define PWM_DEF_VAL  ((int)((PWM_MAX_VAL+PWM_MIN_VAL)/2.0))
+int pwmDutyCycle[pwmPinCnt] = {
+  PWM_DEF_VAL, PWM_DEF_VAL, PWM_DEF_VAL};
+
+// modulating background color
+//float oSpeed = .000075;
+const float oSpeed = 0.0025;
+const int cycleDelay = 100;
+
+const float rOffset = PWM_DEF_VAL/(float)PWM_MAX_VAL;
+const float gOffset = PWM_DEF_VAL/(float)PWM_MAX_VAL;
+const float bOffset = PWM_DEF_VAL/(float)PWM_MAX_VAL;
+
+int rValue = PWM_MAX_VAL;
+int gValue = PWM_MAX_VAL;
+int bValue = PWM_MAX_VAL;
 
 void wakeUpNow()
 {
@@ -171,30 +230,30 @@ void wakeUpNow()
 }
 
 void setup() {
-
-  state = sys_init;
-
-  pinMode(wakePin, INPUT);
-  digitalWrite(wakePin, HIGH);  // enable weak pullup
-
   pinMode(ledPin, OUTPUT);
-  digitalWrite(ledPin, HIGH);
 
-  for (int i=FIRST_COLOR; i<(FIRST_COLOR+NUM_COLORS); i++) {
-    digitalWrite(i,LOW);
-    pinMode(i,OUTPUT);
-  }
-  for (int i=FIRST_COLOR; i<(FIRST_COLOR+NUM_COLORS); i++) {
-    for (int j = 0; j<1; j++) {
-      digitalWrite(i,HIGH);
-      delay(50);
-      digitalWrite(i,LOW);
-      delay(50);
-    }
-    delay(blinkTime);
+  for (int i=0; i<2; i++) {
+    digitalWrite(PWR[i], OUTPUT_LOW);
+    pinMode(PWR[i], OUTPUT);
+
+    digitalWrite(SDI[i], OUTPUT_LOW);
+    digitalWrite(CKI[i], OUTPUT_LOW);
+    pinMode(SDI[i], OUTPUT);
+    pinMode(CKI[i], OUTPUT);
   }
 
-  wakeTime = millis();  // initalize wake time
+  Serial.begin(57600);
+  Serial.println("Hello!");
+
+  //Clear out the array
+  for(int x = 0 ; x < STRIP_LENGTH ; x++) {
+    strip_colors[x] = ((long)0xff)<<((x%3)*8);
+    Serial.println(strip_colors[x],HEX);
+  }
+  //post_frame();
+  post_frame(CHAN_0);
+  post_frame(CHAN_1);
+
 
 #if RELEASE_MODE
   // disable unused things
@@ -252,7 +311,7 @@ void setup() {
   state = sys_idle;
 }
 
-void loop(){
+void loop() {
 
   for (int i=0; i<3; i++) {
     a[i] = readRegister(DOUTX+i); // Read DOUT* register
@@ -310,69 +369,18 @@ void loop(){
   }
   sampleCnt++;
 
-  if (sys_wake == state) {
-    if (a[YAXIS] < -9) {
-      state = sys_left_turn;
-    } 
-    else if (a[XAXIS] > 11) {
-      state = sys_right_turn;
-    } 
-    else if (a[XAXIS] < -11) {
-      state = sys_stop;
-    } 
-    else {
-      state = sys_wake;
-    }
+  if (a[YAXIS] < -9) {
+    state = sys_left_turn;
+  } 
+  else if (a[XAXIS] > 11) {
+    state = sys_right_turn;
+  } 
+  else if (a[XAXIS] < -11) {
+    state = sys_stop;
+  } 
+  else {
+    state = sys_wake;
   }
-
-  switch (state) {
-  case sys_left_turn:
-    // determine if we can stop turning
-    if (a[YAXIS] > -5) {
-      state = sys_active;
-    } 
-    else {
-      digitalWrite(LEFT_BLUE, HIGH);
-      delay(blinkTime);
-    }
-    digitalWrite(LEFT_BLUE, LOW);      
-    break;
-  case sys_right_turn:
-    // determine if we can stop turning
-    if (a[XAXIS] < 6) {
-      state = sys_active;
-    } 
-    else {
-      digitalWrite(RIGHT_BLUE, HIGH);
-      delay(blinkTime);
-    }
-    digitalWrite(RIGHT_BLUE, LOW);
-    break;
-  case sys_nod:
-    digitalWrite(LEFT_GREEN, HIGH);
-    digitalWrite(RIGHT_GREEN, HIGH);
-    break;
-  case sys_stop:
-    // determine if we can stop stopping
-    if (a[XAXIS] > -6) {
-      state = sys_active;
-    } 
-    else {
-      digitalWrite(LEFT_RED, HIGH);
-      digitalWrite(RIGHT_RED, HIGH);
-      delay(blinkTime);
-    }
-    digitalWrite(LEFT_RED, LOW);
-    digitalWrite(RIGHT_RED, LOW);
-    break;
-  default:
-    digitalWrite(LEFT_BLUE, LOW);
-    digitalWrite(RIGHT_BLUE, LOW);
-    digitalWrite(LEFT_RED, LOW);
-    digitalWrite(RIGHT_RED, LOW);
-    break;
-  }
-  delay(blinkTime);
 
 #if DEBUG_ACCEL
   //Print the results to the terminal.
@@ -385,8 +393,32 @@ void loop(){
   delay(20);
 #endif
 
-  // set the brightness of led pin:
+  switch (state) {
+  case sys_left_turn:
+    setColor(255,0,0);
+    break;
+  case sys_right_turn:
+    setColor(0,255,0);
+    break;
+  case sys_nod:
+    setColor(0,0,255);
+    break;
+  case sys_stop:
+    setColor(0,0,255);
+    break;
+  default:
+    setColor(0,0,0);
+    break;
+  }
+
+  //addRandom();
   //updateColor();
+  //loopColor();
+  //post_frame(); //Push the current color frame to the strip
+  post_frame(CHAN_0); //Push the current color frame to the strip
+  post_frame(CHAN_1);
+
+  delay(cycleDelay);                  // wait for a while
 
 #if DEBUG  
   Serial.print(rValue);
@@ -410,102 +442,137 @@ void loop(){
   delay(DELAY_TIME); 
 }
 
-void sleepNow()         // here we put the arduino to sleep
-{
-  // turn off all leds
-  for (int i=FIRST_COLOR; i<(FIRST_COLOR+NUM_COLORS); i++) {
-    digitalWrite(i,LOW);
+
+void loopColor(void) {
+  int x;
+  long tmp;
+
+  tmp = strip_colors[STRIP_LENGTH-1];
+
+  //First, shuffle all the current colors down one spot on the strip
+  for(x = (STRIP_LENGTH - 1) ; x > 0 ; x--) {
+    strip_colors[x] = strip_colors[x - 1];
+  }
+  strip_colors[0] = tmp;
+}
+
+//Throws random colors down the strip array
+void addRandom(void) {
+  int x;
+
+  //First, shuffle all the current colors down one spot on the strip
+  for(x = (STRIP_LENGTH - 1) ; x > 0 ; x--) {
+    strip_colors[x] = strip_colors[x - 1];
   }
 
-  state = sys_sleep;
-  wakeAxis = NOAXIS;
-  //intStatus = 0;
+  //Now form a new RGB color
+  long new_color = 0;
+  for(x = 0 ; x < 3 ; x++){
+    new_color <<= 8;
+    new_color |= random(0xFF); //Give me a number from 0 to 0xFF
+    //new_color &= 0xFFFFF0; //Force the random number to just the upper brightness levels. It sort of works.
+  }
 
-//  for (int i=0; i<3; i++) {
-//    if (a[i] < -1*MAX_OFFSET) {
-//      last[i] = -1*MAX_OFFSET;
-//    } 
-//    else if (a[i] > MAX_OFFSET) {
-//      last[i] = MAX_OFFSET;
-//    } 
-//    else {
-//      last[i] = a[i];
-//    }
-//  }
-//  last[XAXIS] = 0; // dirty hack
+  strip_colors[0] = new_color; //Add the new random color to the strip
+}
 
-  // reset the accelerometer and put into motion detect mode
-  //resetAccelerometer();
-  writeRegister(CTRL, SLEEP_CONFIG);
+void setColor(int red, int green, int blue) {
+  int x;
 
-  /* Time to set the sleep mode.
-   *
-   * The 5 different modes are:
-   *     SLEEP_MODE_IDLE         -the least power savings
-   *     SLEEP_MODE_ADC
-   *     SLEEP_MODE_PWR_SAVE
-   *     SLEEP_MODE_STANDBY
-   *     SLEEP_MODE_PWR_DOWN     -the most power savings
-   *
-   * We want as much power savings as possible, so we use
-   * sleep mode: SLEEP_MODE_PWR_DOWN
-   */
-  set_sleep_mode(SLEEP_MODE_PWR_DOWN);   // sleep mode is set here
+  //Now form a new RGB color
+  long new_color = 0;
 
-  sleep_enable();          // enables the sleep bit in the mcucr register
-  // so sleep is possible. just a safety pin
+  new_color |= red;
+  new_color <<= 8; 
+  new_color |= green;
+  new_color <<= 8; 
+  new_color |= blue;
 
-  /* Now to enable an interrupt. Do it here so if pushed when
-   * running it doesn't interrupt the running program.
-   *
-   * In the function call attachInterrupt(A, B, C)
-   * A   can be either 0 or 1 for interrupts on pin 2 or 3.  
-   *
-   * B   Name of a function you want to execute at interrupt for A.
-   *
-   * C   Trigger mode of the interrupt pin. can be:
-   *             LOW        a low level triggers
-   *             CHANGE     a change in level triggers
-   *             RISING     a rising edge of a level triggers
-   *             FALLING    a falling edge of a level triggers
-   *
-   * In all but the IDLE sleep modes only LOW can be used.
-   */
+  strip_colors[0] = new_color; //Add the new random color to the strip
 
-  attachInterrupt(0,wakeUpNow, LOW);
+  //First, shuffle all the current colors down one spot on the strip
+  for(x = (STRIP_LENGTH - 1) ; x > 0 ; x--) {
+    strip_colors[x] = strip_colors[x - 1];
+  }
 
-  sleep_mode();            // here the device is actually put to sleep!!
-  // THE PROGRAM CONTINUES FROM HERE AFTER WAKING UP
-
-  // recorde the current time immediatly after wake up
-  wakeTime = millis();
-
-  sleep_disable();         // first thing after waking from sleep: disable sleep...
-
-  detachInterrupt(0);    // disables interrupt 0 on pin 2 so the
-  // wakeUpNow code will not be executed
-  // during normal running time.
-
-  state = sys_wake;
-
-  writeRegister(CTRL, ACTIVE_CONFIG);
-
-#if DEBUG_SLEEP
-  delay(50);
-  Serial.print("s: ");
-  delay(100);
-  Serial.println(wakeTime);
-  delay(150);
+#if DEBUG  
+  Serial.print(red);
+  Serial.print(", ");
+  Serial.print(green);
+  Serial.print(", ");
+  Serial.println(blue);
 #endif
 }
 
-//void updateColor() {
-//  float tm = (float) millis() * oSpeed;
-//
-//  bValue = (int)constrain((PWM_MAX_VAL*(sin(tm)/2+rOffset)), PWM_MIN_VAL, PWM_MAX_VAL);
-//  gValue = (int)constrain((PWM_MAX_VAL*(sin(tm+TWO_PI/3)/2+gOffset)), PWM_MIN_VAL, PWM_MAX_VAL);
-//  rValue = (int)constrain((PWM_MAX_VAL*(sin(tm+2*TWO_PI/3)/2+bOffset)), PWM_MIN_VAL, PWM_MAX_VAL);
-//}
+
+void updateColor() {
+  int x;
+  float tm = (float) millis() * oSpeed;
+
+  bValue = (int)constrain((PWM_MAX_VAL*(sin(tm)/2+rOffset)), PWM_MIN_VAL, PWM_MAX_VAL);
+  gValue = (int)constrain((PWM_MAX_VAL*(sin(tm+TWO_PI/3)/2+gOffset)), PWM_MIN_VAL, PWM_MAX_VAL);
+  rValue = (int)constrain((PWM_MAX_VAL*(sin(tm+2*TWO_PI/3)/2+bOffset)), PWM_MIN_VAL, PWM_MAX_VAL);
+
+  //Now form a new RGB color
+  long new_color = 0;
+  //  for(x = 0 ; x < 3 ; x++){
+  //    new_color <<= 8;
+  //    new_color |= random(0xFF); //Give me a number from 0 to 0xFF
+  //    //new_color &= 0xFFFFF0; //Force the random number to just the upper brightness levels. It sort of works.
+  //  }
+  new_color |= rValue;
+  new_color <<= 8; 
+  new_color |= gValue;
+  new_color <<= 8; 
+  new_color |= bValue;
+
+  strip_colors[0] = new_color; //Add the new random color to the strip
+
+  //First, shuffle all the current colors down one spot on the strip
+  for(x = (STRIP_LENGTH - 1) ; x > 0 ; x--) {
+    strip_colors[x] = strip_colors[x - 1];
+  }
+
+#if DEBUG  
+  Serial.print(rValue);
+  Serial.print(", ");
+  Serial.print(gValue);
+  Serial.print(", ");
+  Serial.println(bValue);
+#endif
+}
+
+//Takes the current strip color array and pushes it out
+void post_frame (int ch) {
+  //Each LED requires 24 bits of data
+  //MSB: R7, R6, R5..., G7, G6..., B7, B6... B0 
+  //Once the 24 bits have been delivered, the IC immediately relays these bits to its neighbor
+  //Pulling the clock low for 500us or more causes the IC to post the data.
+
+  for(int LED_number = 0 ; LED_number < STRIP_LENGTH ; LED_number++) {
+    long this_led_color = strip_colors[LED_number]; //24 bits of color data
+
+    for(byte color_bit = 23 ; color_bit != 255 ; color_bit--) {
+      //Feed color bit 23 first (red data MSB)
+
+      digitalWrite(CKI[ch], OUTPUT_LOW); //Only change data when clock is low
+
+      long mask = 1L << color_bit;
+      //The 1'L' forces the 1 to start as a 32 bit number, otherwise it defaults to 16-bit.
+
+      if(this_led_color & mask) 
+        digitalWrite(SDI[ch], OUTPUT_HIGH);
+      else
+        digitalWrite(SDI[ch], OUTPUT_LOW);
+
+      digitalWrite(CKI[ch], OUTPUT_HIGH); //Data is latched when clock goes high
+    }
+  }
+
+  //Pull clock low to put strip into reset/post mode
+  digitalWrite(CKI[ch], OUTPUT_LOW);
+  delayMicroseconds(500); //Wait for 500us to go into reset
+}
 
 unsigned char resetAccelerometer()
 {
@@ -558,51 +625,6 @@ unsigned char readRegister(unsigned char registerAddress)
   // Return new data from RX buffer
   return result;
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
